@@ -18,5 +18,5 @@ args = ["./test.sh"]
 dependencies = ["build"]
 
 [tasks.flow]
-dependencies = ["format", "clean", "build", "test"]
+dependencies = ["clean", "build", "test"]
 
