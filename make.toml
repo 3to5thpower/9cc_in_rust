@@ -1,8 +1,3 @@
-[tasks.format]
-install_crate = "rustfmt"
-command = "cargo"
-args = ["fmt", "--", "--emit=files"]
-
 [tasks.build]
 command = "cargo"
 args = ["build"]

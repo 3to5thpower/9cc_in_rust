@@ -1,66 +1,68 @@
+#![allow(dead_code)]
 use std::env;
 use std::error::Error as StdError;
 use std::fmt;
 use std::iter::Peekable;
 
 fn main() -> Result<(), String> {
-    /*
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
         return Err(format!("引数の個数が正しくありません"));
     }
-      let tokens = match lex(&args[1]) {
-          Ok(v) => v,
-          Err(e) => {
-              return Err(format!("invalid char {:?}", e));
-          }
-      };
 
-      if let TokenKind::Op(o) = &tokens[0].value {
-          return Err(format!("invalid operator {:?}", o));
-      }
-
-      println!(".intel_syntax noprefix");
-      println!(".global main");
-      println!("main:");
-
-      if let TokenKind::Num(n) = &tokens[0].value {
-          println!("  mov rax, {}", n);
-      }
-      let mut itr = tokens[1..].iter();
-    println!("  ret");
-    */
-    use std::io::{stdin, BufRead, BufReader};
-    let stdin = stdin();
-    let stdin = stdin.lock();
-    let stdin = BufReader::new(stdin);
-    let mut lines = stdin.lines();
-
-    fn prompt(s: &str) -> std::io::Result<()> {
-        use std::io::{stdout, Write};
-        let stdout = stdout();
-        let mut stdout = stdout.lock();
-        stdout.write(s.as_bytes())?;
-        stdout.flush()
-    }
-
-    loop {
-        prompt("> ").unwrap();
-        if let Some(Ok(line)) = lines.next() {
-            let ast = match line.parse::<Ast>() {
-                Ok(ast) => ast,
-                Err(e) => {
-                    e.show_diagnostic(&line);
-                    show_trace(e);
-                    continue;
-                }
-            };
-            println!("{:?}", ast);
-        } else {
-            break;
+    let ast = match args[1].parse::<Ast>() {
+        Ok(ast) => ast,
+        Err(e) => {
+            e.show_diagnostic(&args[1]);
+            show_trace(e);
+            return Ok(());
         }
-    }
+    };
+
+    println!(".intel_syntax noprefix");
+    println!(".global main");
+    println!("main:");
+    gen(&ast);
+    println!("  pop rax");
+    println!("  ret");
+
     Ok(())
+}
+
+fn gen(ast: &Ast) {
+    use AstKind::*;
+    use BinOpKind::*;
+    use UniOpKind::*;
+    match ast.value.clone() {
+        Num(n) => println!("  push {}", n),
+        BinOp { op, l, r } => {
+            gen(&l);
+            gen(&r);
+            println!("  pop rdi");
+            println!("  pop rax");
+            match op.value {
+                Add => println!("  add rax, rdi"),
+                Sub => println!("  sub rax, rdi"),
+                Mult => println!("  imul rax, rdi"),
+                Div => {
+                    println!("  cqo");
+                    println!("  idiv rdi");
+                }
+            }
+            println!("  push rax");
+        }
+        UniOp { op, e } => match op.value {
+            Plus => gen(&e),
+            Minus => {
+                println!("  push 0");
+                gen(&e);
+                println!("  pop rdi");
+                println!("  pop rax");
+                println!("  sub rax, rdi");
+                println!("  push rax");
+            }
+        },
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -113,7 +115,7 @@ impl Error {
     fn show_diagnostic(&self, input: &str) {
         use self::Error::*;
         use self::ParseError as P;
-        let (e, loc): (&StdError, Loc) = match self {
+        let (e, loc): (&dyn StdError, Loc) = match self {
             Lexer(e) => (e, e.loc.clone()),
             Parser(e) => {
                 let loc = match e {
