@@ -50,12 +50,8 @@ fn main() -> Result<(), String> {
             let ast = match line.parse::<Ast>() {
                 Ok(ast) => ast,
                 Err(e) => {
-                    eprintln!("{}", e);
-                    let mut source = e.source();
-                    while let Some(e) = source {
-                        eprintln!("caused by {}", e);
-                        source = e.source()
-                    }
+                    e.show_diagnostic(&line);
+                    show_trace(e);
                     continue;
                 }
             };
@@ -82,7 +78,6 @@ impl From<ParseError> for Error {
         Error::Parser(e)
     }
 }
-
 impl std::str::FromStr for Ast {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -106,6 +101,43 @@ impl StdError for Error {
             Lexer(lex) => Some(lex),
             Parser(parse) => Some(parse),
         }
+    }
+}
+
+fn print_annot(input: &str, loc: Loc) {
+    eprintln!("{}", input);
+    eprintln!("{}{}", " ".repeat(loc.0), "^".repeat(loc.len()));
+}
+
+impl Error {
+    fn show_diagnostic(&self, input: &str) {
+        use self::Error::*;
+        use self::ParseError as P;
+        let (e, loc): (&StdError, Loc) = match self {
+            Lexer(e) => (e, e.loc.clone()),
+            Parser(e) => {
+                let loc = match e {
+                    P::UnexpectedToken(Token { loc, .. })
+                    | P::NotExpression(Token { loc, .. })
+                    | P::NotOperator(Token { loc, .. })
+                    | P::UnClosedOpenParen(Token { loc, .. }) => loc.clone(),
+                    P::RebundantExpression(Token { loc, .. }) => Loc(loc.0, input.len() + 1),
+                    P::Eof => Loc(input.len(), input.len() + 1),
+                };
+                (e, loc)
+            }
+        };
+        eprintln!("{}", e);
+        print_annot(input, loc);
+    }
+}
+
+fn show_trace<E: StdError>(e: E) {
+    eprintln!("{}", e);
+    let mut source = e.source();
+    while let Some(e) = source {
+        eprintln!("caused by {}", e);
+        source = e.source()
     }
 }
 
