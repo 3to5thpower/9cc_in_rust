@@ -18,6 +18,36 @@ fn gen(ast: &parse::Ast) {
                     println!("  cqo");
                     println!("  idiv rdi");
                 }
+                Less => {
+                    println!("  cmp rax, rdi");
+                    println!("  setl al");
+                    println!("  movzb rax, al");
+                }
+                LessEqual => {
+                    println!("  cmp rax, rdi");
+                    println!("  setle al");
+                    println!("  movzb rax, al");
+                }
+                Equal => {
+                    println!("  cmp rax, rdi");
+                    println!("  sete al");
+                    println!("  movzb rax, al");
+                }
+                NotEqual => {
+                    println!("  cmp rax, rdi");
+                    println!("  setne al");
+                    println!("  movzb rax, al");
+                }
+                Greater => {
+                    println!("  cmp rdi, rax");
+                    println!("  setl al");
+                    println!("  movzb rax, al");
+                }
+                GreaterEqual => {
+                    println!("  cmp rdi, rax");
+                    println!("  setle al");
+                    println!("  movzb rax, al");
+                }
             }
             println!("  push rax");
         }

@@ -34,6 +34,12 @@ pub enum TokenKind {
     Slash,
     Rparen,
     Lparen,
+    DoubleEqual,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -65,6 +71,24 @@ impl Token {
     fn rparen(loc: Loc) -> Self {
         Self::new(TokenKind::Rparen, loc)
     }
+    fn double_equal(loc: Loc) -> Self {
+        Self::new(TokenKind::DoubleEqual, loc)
+    }
+    fn not_equal(loc: Loc) -> Self {
+        Self::new(TokenKind::NotEqual, loc)
+    }
+    fn less(loc: Loc) -> Self {
+        Self::new(TokenKind::Less, loc)
+    }
+    fn less_equal(loc: Loc) -> Self {
+        Self::new(TokenKind::LessEqual, loc)
+    }
+    fn greater(loc: Loc) -> Self {
+        Self::new(TokenKind::Greater, loc)
+    }
+    fn greater_equal(loc: Loc) -> Self {
+        Self::new(TokenKind::GreaterEqual, loc)
+    }
 }
 
 pub type LexError = Annot<LexErrorKind>;
@@ -82,51 +106,102 @@ fn lex(input: &str) -> Result<Vec<Token>, LexError> {
     let input = input.as_bytes();
     let mut pos = 0;
 
+    macro_rules! lex_a_token {
+        ($lexer: expr) => {{
+            let (tok, p) = $lexer?;
+            res.push(tok);
+            pos = p;
+        }};
+    }
+
     while pos < input.len() {
         match input[pos] {
-            b'+' => {
-                res.push(Token::plus(Loc(pos, pos + 1)));
-                pos += 1;
-            }
-            b'-' => {
-                res.push(Token::minus(Loc(pos, pos + 1)));
-                pos += 1;
-            }
-            b'*' => {
-                res.push(Token::asterisk(Loc(pos, pos + 1)));
-                pos += 1;
-            }
-            b'/' => {
-                res.push(Token::slash(Loc(pos, pos + 1)));
-                pos += 1;
-            }
-            b'(' => {
-                res.push(Token::lparen(Loc(pos, pos + 1)));
-                pos += 1;
-            }
-            b')' => {
-                res.push(Token::rparen(Loc(pos, pos + 1)));
-                pos += 1;
-            }
-            b'0'..=b'9' => {
-                let mut end = pos;
-                while end < input.len() && b'0' <= input[end] && input[end] <= b'9' {
-                    end += 1;
-                }
-                let num: u64 = std::str::from_utf8(&input[pos..end])
-                    .unwrap()
-                    .parse()
-                    .unwrap();
-                res.push(Token::number(num, Loc(pos, end)));
-                pos = end;
-            }
-            b' ' | b'\n' | b'\t' => {
-                pos += 1;
-            }
+            b'<' => lex_a_token!(lex_less(input, pos)),
+            b'>' => lex_a_token!(lex_greater(input, pos)),
+            b'!' => lex_a_token!(lex_not_equal(input, pos)),
+            b'=' => lex_a_token!(lex_equal(input, pos)),
+            b'+' => lex_a_token!(
+                consume_byte(&input, pos, b'+').map(|p| (Token::plus(Loc(pos, p.1)), p.1))
+            ),
+            b'-' => lex_a_token!(
+                consume_byte(&input, pos, b'-').map(|p| (Token::minus(Loc(pos, p.1)), p.1))
+            ),
+            b'*' => lex_a_token!(
+                consume_byte(&input, pos, b'*').map(|p| (Token::asterisk(Loc(pos, p.1)), p.1))
+            ),
+            b'/' => lex_a_token!(
+                consume_byte(&input, pos, b'/').map(|p| (Token::slash(Loc(pos, p.1)), p.1))
+            ),
+            b'(' => lex_a_token!(
+                consume_byte(&input, pos, b'(').map(|p| (Token::lparen(Loc(pos, p.1)), p.1))
+            ),
+            b')' => lex_a_token!(
+                consume_byte(&input, pos, b')').map(|p| (Token::rparen(Loc(pos, p.1)), p.1))
+            ),
+            b'0'..=b'9' => lex_a_token!(lex_number(input, pos)),
+            b' ' | b'\n' | b'\t' => pos += 1,
             b => return Err(LexError::invalid_char(b as char, Loc(pos, pos + 1))),
         }
     }
     Ok(res)
+}
+
+fn consume_byte(input: &[u8], pos: usize, b: u8) -> Result<(u8, usize), LexError> {
+    if input.len() <= pos {
+        return Err(LexError::eof(Loc(pos, pos)));
+    }
+    if input[pos] != b {
+        return Err(LexError::invalid_char(
+            input[pos] as char,
+            Loc(pos, pos + 1),
+        ));
+    }
+    Ok((b, pos + 1))
+}
+
+fn lex_number(input: &[u8], pos: usize) -> Result<(Token, usize), LexError> {
+    fn recognize_many(input: &[u8], mut pos: usize, mut f: impl FnMut(u8) -> bool) -> usize {
+        while pos < input.len() && f(input[pos]) {
+            pos += 1;
+        }
+        pos
+    }
+
+    use std::str::from_utf8;
+    let start = pos;
+    let end = recognize_many(input, start, |b| b"1234567890".contains(&b));
+    let n = from_utf8(&input[start..end]).unwrap().parse().unwrap();
+    Ok((Token::number(n, Loc(start, end)), end))
+}
+
+fn lex_less(input: &[u8], pos: usize) -> Result<(Token, usize), LexError> {
+    let (_, less_pos) = consume_byte(input, pos, b'<')?;
+    if input.len() <= less_pos || input[less_pos] != b'=' {
+        Ok((Token::less(Loc(pos, less_pos)), less_pos + 1))
+    } else {
+        Ok((Token::less_equal(Loc(pos, less_pos + 1)), less_pos + 2))
+    }
+}
+fn lex_greater(input: &[u8], pos: usize) -> Result<(Token, usize), LexError> {
+    let (_, greater_pos) = consume_byte(input, pos, b'>')?;
+    if input.len() <= greater_pos || input[greater_pos] != b'=' {
+        Ok((Token::greater(Loc(pos, greater_pos)), greater_pos + 1))
+    } else {
+        Ok((
+            Token::greater_equal(Loc(pos, greater_pos + 1)),
+            greater_pos + 2,
+        ))
+    }
+}
+fn lex_not_equal(input: &[u8], pos: usize) -> Result<(Token, usize), LexError> {
+    let (_, pos2) = consume_byte(input, pos, b'!')?;
+    let (_, end) = consume_byte(input, pos2, b'=')?;
+    Ok((Token::not_equal(Loc(pos, end)), end))
+}
+fn lex_equal(input: &[u8], pos: usize) -> Result<(Token, usize), LexError> {
+    let (_, pos2) = consume_byte(input, pos, b'=')?;
+    let (_, end) = consume_byte(input, pos2, b'=')?;
+    Ok((Token::not_equal(Loc(pos, end)), end))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -176,6 +251,12 @@ pub enum BinOpKind {
     Sub,
     Mult,
     Div,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    Equal,
+    NotEqual,
 }
 type BinOp = Annot<BinOpKind>;
 impl BinOp {
@@ -190,6 +271,24 @@ impl BinOp {
     }
     fn div(loc: Loc) -> Self {
         Self::new(BinOpKind::Div, loc)
+    }
+    fn less(loc: Loc) -> Self {
+        Self::new(BinOpKind::Less, loc)
+    }
+    fn less_equal(loc: Loc) -> Self {
+        Self::new(BinOpKind::LessEqual, loc)
+    }
+    fn greater(loc: Loc) -> Self {
+        Self::new(BinOpKind::Greater, loc)
+    }
+    fn greater_equal(loc: Loc) -> Self {
+        Self::new(BinOpKind::GreaterEqual, loc)
+    }
+    fn equal(loc: Loc) -> Self {
+        Self::new(BinOpKind::Equal, loc)
+    }
+    fn not_equal(loc: Loc) -> Self {
+        Self::new(BinOpKind::NotEqual, loc)
     }
 }
 
@@ -217,7 +316,7 @@ fn parse_expr<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
-    parse_expr3(tokens)
+    parse_expr5(tokens)
 }
 
 fn parse_left_binop<Tokens>(
@@ -244,6 +343,52 @@ where
         }
     }
     Ok(e)
+}
+
+fn parse_expr5<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
+where
+    Tokens: Iterator<Item = Token>,
+{
+    fn parse_expr5_op<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<BinOp, ParseError>
+    where
+        Tokens: Iterator<Item = Token>,
+    {
+        let op = tokens
+            .peek()
+            .ok_or(ParseError::Eof)
+            .and_then(|tok| match tok.value {
+                TokenKind::DoubleEqual => Ok(BinOp::equal(tok.loc.clone())),
+                TokenKind::NotEqual => Ok(BinOp::not_equal(tok.loc.clone())),
+                _ => Err(ParseError::NotOperator(tok.clone())),
+            })?;
+        tokens.next();
+        Ok(op)
+    }
+    parse_left_binop(tokens, parse_expr4, parse_expr5_op)
+}
+
+fn parse_expr4<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
+where
+    Tokens: Iterator<Item = Token>,
+{
+    fn parse_expr4_op<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<BinOp, ParseError>
+    where
+        Tokens: Iterator<Item = Token>,
+    {
+        let op = tokens
+            .peek()
+            .ok_or(ParseError::Eof)
+            .and_then(|tok| match tok.value {
+                TokenKind::Less => Ok(BinOp::less(tok.loc.clone())),
+                TokenKind::LessEqual => Ok(BinOp::less_equal(tok.loc.clone())),
+                TokenKind::Greater => Ok(BinOp::greater(tok.loc.clone())),
+                TokenKind::GreaterEqual => Ok(BinOp::greater_equal(tok.loc.clone())),
+                _ => Err(ParseError::NotOperator(tok.clone())),
+            })?;
+        tokens.next();
+        Ok(op)
+    }
+    parse_left_binop(tokens, parse_expr3, parse_expr4_op)
 }
 
 fn parse_expr3<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
@@ -429,6 +574,12 @@ impl fmt::Display for TokenKind {
             Slash => write!(f, "/"),
             Lparen => write!(f, "("),
             Rparen => write!(f, ")"),
+            DoubleEqual => write!(f, "=="),
+            NotEqual => write!(f, "!="),
+            Less => write!(f, "<"),
+            LessEqual => write!(f, "<="),
+            Greater => write!(f, ">"),
+            GreaterEqual => write!(f, ">="),
         }
     }
 }
@@ -555,6 +706,34 @@ mod tests {
                     Loc(12, 15)
                 ),
                 Loc(0, 15)
+            ))
+        )
+    }
+
+    #[test]
+    fn lex_parse_lessthan() {
+        let input = "1+2*3>=-10";
+        assert_eq!(
+            parse(lex(input).unwrap()),
+            Ok(Ast::binop(
+                BinOp::greater_equal(Loc(5, 7)),
+                Ast::binop(
+                    BinOp::add(Loc(1, 2)),
+                    Ast::num(1, Loc(0, 1)),
+                    Ast::binop(
+                        BinOp::mult(Loc(3, 4)),
+                        Ast::num(2, Loc(2, 3)),
+                        Ast::num(3, Loc(4, 5)),
+                        Loc(2, 5),
+                    ),
+                    Loc(0, 5),
+                ),
+                Ast::uniop(
+                    UniOp::minus(Loc(7, 8)),
+                    Ast::num(10, Loc(8, 10)),
+                    Loc(7, 10),
+                ),
+                Loc(0, 10),
             ))
         )
     }
