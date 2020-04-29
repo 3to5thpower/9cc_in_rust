@@ -1,4 +1,4 @@
-use super::parse;
+use super::{parse, parse::Ast};
 fn gen(ast: &parse::Ast) {
     use parse::AstKind::*;
     use parse::BinOpKind::*;
@@ -65,7 +65,7 @@ fn gen(ast: &parse::Ast) {
     }
 }
 
-pub fn codegen(ast: &parse::Ast) {
+pub fn codegen(ast: &Vec<Ast>) {
     println!(".intel_syntax noprefix");
     println!(".global main");
     println!("main:");

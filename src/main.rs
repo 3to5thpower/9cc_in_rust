@@ -10,7 +10,7 @@ fn main() -> Result<(), String> {
         return Err(format!("引数の個数が正しくありません"));
     }
 
-    let ast = match args[1].parse::<parse::Ast>() {
+    let ast = match parse::parse(&args[1]) {
         Ok(ast) => ast,
         Err(e) => {
             e.show_diagnostic(&args[1]);
