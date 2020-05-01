@@ -2,6 +2,7 @@
 use std::env;
 
 mod codegen;
+mod lex;
 mod parse;
 
 fn main() -> Result<(), String> {
