@@ -7,7 +7,7 @@ fn gen_val(ast: &Ast) {
             println!("  sub rax, {}", offset);
             println!("  push rax");
         }
-        _ => panic!("代入の左辺値が変数ではありません"),
+        _ => unreachable!(),
     }
 }
 

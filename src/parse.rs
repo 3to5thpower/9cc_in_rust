@@ -339,6 +339,7 @@ pub enum ParseError {
     UnClosedOpenParen(Token),
     Eof,
     NotSemicolon(Token),
+    NotAddressExp(Token),
 }
 
 pub fn parse(input: &str) -> Result<Vec<Ast>, Error> {
@@ -435,6 +436,7 @@ fn parse_assign<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError
 where
     Tokens: Iterator<Item = Token>,
 {
+    let equal_tok = tokens.peek().ok_or(ParseError::Eof)?.clone();
     let equality = parse_equality(tokens)?;
     match tokens.peek() {
         None
@@ -448,7 +450,11 @@ where
         }) => Ok(Ast::stmt(equality.clone(), equality.loc.clone())),
         Some(tok) => match tok.value {
             TokenKind::Equal => {
-                tokens.next();
+                if let AstKind::Variable(_) = equality.value {
+                    tokens.next();
+                } else {
+                    return Err(ParseError::NotAddressExp(equal_tok.clone()));
+                }
                 let rvalue = parse_assign(tokens)?;
                 let loc = equality.loc.merge(&rvalue.loc);
                 Ok(Ast::assign(equality, rvalue, loc))
@@ -652,6 +658,7 @@ impl Error {
             Parser(e) => {
                 let loc = match e {
                     P::UnexpectedToken(Token { loc, .. })
+                    | P::NotAddressExp(Token { loc, .. })
                     | P::NotExpression(Token { loc, .. })
                     | P::NotSemicolon(Token { loc, .. })
                     | P::NotOperator(Token { loc, .. })
@@ -730,6 +737,7 @@ impl fmt::Display for ParseError {
             NotOperator(tok) => write!(f, "{}: '{}' is not an operator", tok.loc, tok.value),
             UnClosedOpenParen(tok) => write!(f, "{}: '{}' is not closed", tok.loc, tok.value),
             NotSemicolon(tok) => write!(f, "{}: not ';' before tokens '{}'", tok.loc, tok.value),
+            NotAddressExp(tok) => write!(f, "{}: cannot assign value in '{}'", tok.loc, tok.value),
             RebundantExpression(tok) => write!(
                 f,
                 "{}: expression after '{}' is rebundant",
