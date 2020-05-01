@@ -25,5 +25,6 @@ assert 0 '1 + 4 >= 1 + 3 * 4;'
 assert 1 '1 <= 1 * 1;'
 assert 1 '3 / 3 + 5 > (5 / 5);'
 assert 4 'a = 1 + 1; b = a + 2; b;'
+assert 5 'four = 4; four + 1;'
 
 echo OK

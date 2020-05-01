@@ -139,34 +139,42 @@ fn parse_body(tokens: Vec<Token>) -> Result<Vec<Ast>, ParseError> {
     // peekはイテレータが現在指している値をただ返す
     let mut tokens = tokens.into_iter().peekable();
     let mut res = vec![];
-    parse_program(&mut tokens, &mut res)?;
+    let mut vars = vec![];
+    parse_program(&mut tokens, &mut res, &mut vars)?;
     Ok(res)
 }
 
-fn parse_program<Tokens>(tokens: &mut Peekable<Tokens>, v: &mut Vec<Ast>) -> Result<(), ParseError>
+fn parse_program<Tokens>(
+    tokens: &mut Peekable<Tokens>,
+    v: &mut Vec<Ast>,
+    vars: &mut Vec<(String, usize)>,
+) -> Result<(), ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
     match tokens.peek() {
         Some(_) => {
-            let stmt = match parse_stmt(tokens) {
+            let stmt = match parse_stmt(tokens, vars) {
                 Ok(stmt) => stmt,
                 //Err(ParseError::Eof) => return Ok(()),
                 Err(e) => return Err(e),
             };
             v.push(stmt);
-            parse_program(tokens, v)?;
+            parse_program(tokens, v, vars)?;
             Ok(())
         }
         None => Ok(()),
     }
 }
 
-fn parse_stmt<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
+fn parse_stmt<Tokens>(
+    tokens: &mut Peekable<Tokens>,
+    vars: &mut Vec<(String, usize)>,
+) -> Result<Ast, ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
-    let exp = parse_expr(tokens)?;
+    let exp = parse_expr(tokens, vars)?;
     match tokens.next() {
         None => Err(ParseError::Eof),
         Some(tok) => match tok.value {
@@ -179,22 +187,26 @@ where
     }
 }
 
-fn parse_expr<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
+fn parse_expr<Tokens>(
+    tokens: &mut Peekable<Tokens>,
+    vars: &mut Vec<(String, usize)>,
+) -> Result<Ast, ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
-    parse_assign(tokens)
+    parse_assign(tokens, vars)
 }
 
 fn parse_left_binop<Tokens>(
     tokens: &mut Peekable<Tokens>,
-    subexpr_parser: fn(&mut Peekable<Tokens>) -> Result<Ast, ParseError>,
+    vars: &mut Vec<(String, usize)>,
+    subexpr_parser: fn(&mut Peekable<Tokens>, &mut Vec<(String, usize)>) -> Result<Ast, ParseError>,
     op_parser: fn(&mut Peekable<Tokens>) -> Result<BinOp, ParseError>,
 ) -> Result<Ast, ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
-    let mut e = subexpr_parser(tokens)?;
+    let mut e = subexpr_parser(tokens, vars)?;
     loop {
         match tokens.peek() {
             Some(_) => {
@@ -202,7 +214,7 @@ where
                     Ok(op) => op,
                     Err(_) => break,
                 };
-                let r = subexpr_parser(tokens)?;
+                let r = subexpr_parser(tokens, vars)?;
                 let loc = e.loc.merge(&r.loc);
                 e = Ast::binop(op, e, r, loc)
             }
@@ -212,12 +224,15 @@ where
     Ok(e)
 }
 
-fn parse_assign<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
+fn parse_assign<Tokens>(
+    tokens: &mut Peekable<Tokens>,
+    vars: &mut Vec<(String, usize)>,
+) -> Result<Ast, ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
     let equal_tok = tokens.peek().ok_or(ParseError::Eof)?.clone();
-    let equality = parse_equality(tokens)?;
+    let equality = parse_equality(tokens, vars)?;
     match tokens.peek() {
         None
         | Some(Token {
@@ -235,7 +250,7 @@ where
                 } else {
                     return Err(ParseError::NotAddressExp(equal_tok.clone()));
                 }
-                let rvalue = parse_assign(tokens)?;
+                let rvalue = parse_assign(tokens, vars)?;
                 let loc = equality.loc.merge(&rvalue.loc);
                 Ok(Ast::assign(equality, rvalue, loc))
             }
@@ -244,7 +259,10 @@ where
     }
 }
 
-fn parse_equality<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
+fn parse_equality<Tokens>(
+    tokens: &mut Peekable<Tokens>,
+    vars: &mut Vec<(String, usize)>,
+) -> Result<Ast, ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -263,10 +281,13 @@ where
         tokens.next();
         Ok(op)
     }
-    parse_left_binop(tokens, parse_relational, parse_expr5_op)
+    parse_left_binop(tokens, vars, parse_relational, parse_expr5_op)
 }
 
-fn parse_relational<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
+fn parse_relational<Tokens>(
+    tokens: &mut Peekable<Tokens>,
+    vars: &mut Vec<(String, usize)>,
+) -> Result<Ast, ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -287,10 +308,13 @@ where
         tokens.next();
         Ok(op)
     }
-    parse_left_binop(tokens, parse_expr3, parse_expr4_op)
+    parse_left_binop(tokens, vars, parse_expr3, parse_expr4_op)
 }
 
-fn parse_expr3<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
+fn parse_expr3<Tokens>(
+    tokens: &mut Peekable<Tokens>,
+    vars: &mut Vec<(String, usize)>,
+) -> Result<Ast, ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -309,10 +333,13 @@ where
         tokens.next();
         Ok(op)
     }
-    parse_left_binop(tokens, parse_expr2, parse_expr3_op)
+    parse_left_binop(tokens, vars, parse_expr2, parse_expr3_op)
 }
 
-fn parse_expr2<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
+fn parse_expr2<Tokens>(
+    tokens: &mut Peekable<Tokens>,
+    vars: &mut Vec<(String, usize)>,
+) -> Result<Ast, ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -331,10 +358,13 @@ where
         tokens.next();
         Ok(op)
     }
-    parse_left_binop(tokens, parse_expr1, parse_expr2_op)
+    parse_left_binop(tokens, vars, parse_expr1, parse_expr2_op)
 }
 
-fn parse_expr1<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
+fn parse_expr1<Tokens>(
+    tokens: &mut Peekable<Tokens>,
+    vars: &mut Vec<(String, usize)>,
+) -> Result<Ast, ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -351,15 +381,18 @@ where
                 }) => UniOp::minus(loc),
                 _ => unreachable!(),
             };
-            let e = parse_atom(tokens)?;
+            let e = parse_atom(tokens, vars)?;
             let loc = e.loc.merge(&op.loc);
             Ok(Ast::uniop(op, e, loc))
         }
-        _ => parse_atom(tokens),
+        _ => parse_atom(tokens, vars),
     }
 }
 
-fn parse_atom<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
+fn parse_atom<Tokens>(
+    tokens: &mut Peekable<Tokens>,
+    vars: &mut Vec<(String, usize)>,
+) -> Result<Ast, ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -368,15 +401,22 @@ where
         .ok_or(ParseError::Eof)
         .and_then(|tok| match tok.value.clone() {
             TokenKind::Num(n) => Ok(Ast::num(n, tok.loc)),
-            TokenKind::Ident(s) => match s.len() {
-                1 => {
-                    let n = (s.as_bytes()[0] as u8 - 'a' as u8 + 1) as usize * 8;
-                    Ok(Ast::variable(n, tok.loc))
+            TokenKind::Ident(s) => {
+                let max = vars.iter().find(|&(name, _)| s == *name);
+                if max.is_some() {
+                    let offset = max.unwrap().1;
+                    Ok(Ast::variable(offset, tok.loc))
+                } else {
+                    let offset = match vars.iter().max_by_key(|(_, offset)| offset) {
+                        None => 8,
+                        Some((_, offset)) => offset + 8,
+                    };
+                    vars.push((s, offset));
+                    Ok(Ast::variable(offset, tok.loc))
                 }
-                _ => Err(ParseError::NotExpression(tok)),
-            },
+            }
             TokenKind::Lparen => {
-                let e = parse_expr(tokens)?;
+                let e = parse_expr(tokens, vars)?;
                 match tokens.next() {
                     Some(Token {
                         value: TokenKind::Rparen,
