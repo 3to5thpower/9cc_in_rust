@@ -346,6 +346,7 @@ pub fn parse(input: &str) -> Result<Vec<Ast>, Error> {
         Ok(v) => v,
         Err(e) => return Err(Error::Lexer(e)),
     };
+    println!("{:?}", tokens);
     let res = match parse_body(tokens) {
         Ok(v) => v,
         Err(e) => return Err(Error::Parser(e)),
@@ -366,7 +367,7 @@ where
     Tokens: Iterator<Item = Token>,
 {
     match tokens.peek() {
-        Some(tok) => {
+        Some(_) => {
             let stmt = parse_stmt(tokens)?;
             v.push(stmt);
             parse_program(tokens, v)?;
@@ -381,21 +382,15 @@ where
     Tokens: Iterator<Item = Token>,
 {
     let exp = parse_expr(tokens)?;
-    match tokens.peek() {
+    match tokens.next() {
         None => Err(ParseError::Eof),
-        Some(tok) => {
-            let e = parse_expr(tokens)?;
-            match tokens.peek() {
-                Some(tok) => match tok.value.clone() {
-                    TokenKind::Semicolon => {
-                        let loc = e.loc.merge(&tok.loc);
-                        Ok(Ast::stmt(e, loc))
-                    }
-                    _ => Err(ParseError::NotSemicolon(tok.clone())),
-                },
-                _ => Err(ParseError::NotSemicolon(tok.clone())),
+        Some(tok) => match tok.value {
+            TokenKind::Semicolon => {
+                let loc = exp.loc.merge(&tok.loc);
+                Ok(Ast::stmt(exp, loc))
             }
-        }
+            _ => Err(ParseError::NotSemicolon(tok.clone())),
+        },
     }
 }
 
@@ -438,9 +433,14 @@ where
 {
     let equality = parse_equality(tokens)?;
     match tokens.peek() {
-        None => Ok(Ast::stmt(equality, equality.loc)),
-        Some(tok) => match tokens.next().unwrap().value {
+        None
+        | Some(Token {
+            value: TokenKind::Semicolon,
+            ..
+        }) => Ok(Ast::stmt(equality.clone(), equality.loc.clone())),
+        Some(tok) => match tok.value {
             TokenKind::Equal => {
+                tokens.next();
                 let rvalue = parse_assign(tokens)?;
                 let loc = equality.loc.merge(&rvalue.loc);
                 Ok(Ast::assign(equality, rvalue, loc))
@@ -572,7 +572,7 @@ where
     tokens
         .next()
         .ok_or(ParseError::Eof)
-        .and_then(|tok| match tok.value {
+        .and_then(|tok| match tok.value.clone() {
             TokenKind::Num(n) => Ok(Ast::num(n, tok.loc)),
             TokenKind::Ident(s) => match s.len() {
                 1 => {
@@ -645,6 +645,7 @@ impl Error {
                 let loc = match e {
                     P::UnexpectedToken(Token { loc, .. })
                     | P::NotExpression(Token { loc, .. })
+                    | P::NotSemicolon(Token { loc, .. })
                     | P::NotOperator(Token { loc, .. })
                     | P::UnClosedOpenParen(Token { loc, .. }) => loc.clone(),
                     P::RebundantExpression(Token { loc, .. }) => Loc(loc.0, input.len() + 1),
@@ -720,6 +721,7 @@ impl fmt::Display for ParseError {
             ),
             NotOperator(tok) => write!(f, "{}: '{}' is not an operator", tok.loc, tok.value),
             UnClosedOpenParen(tok) => write!(f, "{}: '{}' is not closed", tok.loc, tok.value),
+            NotSemicolon(tok) => write!(f, "{}: not ';' before tokens '{}'", tok.loc, tok.value),
             RebundantExpression(tok) => write!(
                 f,
                 "{}: expression after '{}' is rebundant",
@@ -735,7 +737,7 @@ mod tests {
     use super::*;
     #[test]
     fn test_lexer() {
-        let input = "1 + 2 * 3 - -10";
+        let input = "1 + 2 * 3 - -10;";
         assert_eq!(
             lex(input),
             Ok(vec![
@@ -747,13 +749,14 @@ mod tests {
                 Token::minus(Loc(10, 11)),
                 Token::minus(Loc(12, 13)),
                 Token::number(10, Loc(13, 15)),
+                Token::semicolon(Loc(15, 16)),
             ])
         );
     }
 
     #[test]
     fn test_parser() {
-        let ast = parse(vec![
+        let ast = parse_body(vec![
             Token::number(1, Loc(0, 1)),
             Token::plus(Loc(2, 3)),
             Token::number(2, Loc(4, 5)),
@@ -762,6 +765,7 @@ mod tests {
             Token::minus(Loc(10, 11)),
             Token::minus(Loc(12, 13)),
             Token::number(10, Loc(13, 15)),
+            Token::semicolon(Loc(15, 16)),
         ]);
 
         assert_eq!(
@@ -784,16 +788,16 @@ mod tests {
                     Ast::num(10, Loc(13, 15)),
                     Loc(12, 15)
                 ),
-                Loc(0, 15)
+                Loc(0, 16)
             )])
         );
     }
 
     #[test]
     fn lex_parse() {
-        let input = "1 + 2 * 3 - -10";
+        let input = "1 + 2 * 3 - -10;";
         assert_eq!(
-            parse(lex(input).unwrap()),
+            parse_body(lex(input).unwrap()),
             Ok(vec![Ast::binop(
                 BinOp::sub(Loc(10, 11)),
                 Ast::binop(
@@ -812,16 +816,16 @@ mod tests {
                     Ast::num(10, Loc(13, 15)),
                     Loc(12, 15)
                 ),
-                Loc(0, 15)
+                Loc(0, 16)
             )])
         )
     }
 
     #[test]
     fn lex_parse_lessthan() {
-        let input = "1+2*3>=-10";
+        let input = "1+2*3>=-10;";
         assert_eq!(
-            parse(lex(input).unwrap()),
+            parse_body(lex(input).unwrap()),
             Ok(vec![Ast::binop(
                 BinOp::greater_equal(Loc(5, 7)),
                 Ast::binop(
@@ -840,7 +844,7 @@ mod tests {
                     Ast::num(10, Loc(8, 10)),
                     Loc(7, 10),
                 ),
-                Loc(0, 10),
+                Loc(0, 11),
             )])
         )
     }
