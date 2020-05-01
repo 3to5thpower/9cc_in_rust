@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use std::env;
 
-//mod codegen;
+mod codegen;
 mod parse;
 
 fn main() -> Result<(), String> {
@@ -18,7 +18,7 @@ fn main() -> Result<(), String> {
             return Ok(());
         }
     };
-    //codegen::codegen(&ast);
-    println!("{:?}", ast);
+    codegen::codegen(&ast);
+    //println!("{:?}", ast);
     Ok(())
 }

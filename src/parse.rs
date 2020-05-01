@@ -346,7 +346,7 @@ pub fn parse(input: &str) -> Result<Vec<Ast>, Error> {
         Ok(v) => v,
         Err(e) => return Err(Error::Lexer(e)),
     };
-    println!("{:?}", tokens);
+    //println!("{:?}", tokens);
     let res = match parse_body(tokens) {
         Ok(v) => v,
         Err(e) => return Err(Error::Parser(e)),
@@ -368,7 +368,11 @@ where
 {
     match tokens.peek() {
         Some(_) => {
-            let stmt = parse_stmt(tokens)?;
+            let stmt = match parse_stmt(tokens) {
+                Ok(stmt) => stmt,
+                //Err(ParseError::Eof) => return Ok(()),
+                Err(e) => return Err(e),
+            };
             v.push(stmt);
             parse_program(tokens, v)?;
             Ok(())
@@ -436,6 +440,10 @@ where
         None
         | Some(Token {
             value: TokenKind::Semicolon,
+            ..
+        })
+        | Some(Token {
+            value: TokenKind::Rparen,
             ..
         }) => Ok(Ast::stmt(equality.clone(), equality.loc.clone())),
         Some(tok) => match tok.value {
@@ -588,7 +596,7 @@ where
                         value: TokenKind::Rparen,
                         ..
                     }) => Ok(e),
-                    Some(t) => Err(ParseError::RebundantExpression(t)),
+                    Some(t) => Err(ParseError::RebundantExpression(t.clone())),
                     _ => Err(ParseError::UnClosedOpenParen(tok)),
                 }
             }
@@ -729,123 +737,5 @@ impl fmt::Display for ParseError {
             ),
             Eof => write!(f, "End of file"),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_lexer() {
-        let input = "1 + 2 * 3 - -10;";
-        assert_eq!(
-            lex(input),
-            Ok(vec![
-                Token::number(1, Loc(0, 1)),
-                Token::plus(Loc(2, 3)),
-                Token::number(2, Loc(4, 5)),
-                Token::asterisk(Loc(6, 7)),
-                Token::number(3, Loc(8, 9)),
-                Token::minus(Loc(10, 11)),
-                Token::minus(Loc(12, 13)),
-                Token::number(10, Loc(13, 15)),
-                Token::semicolon(Loc(15, 16)),
-            ])
-        );
-    }
-
-    #[test]
-    fn test_parser() {
-        let ast = parse_body(vec![
-            Token::number(1, Loc(0, 1)),
-            Token::plus(Loc(2, 3)),
-            Token::number(2, Loc(4, 5)),
-            Token::asterisk(Loc(6, 7)),
-            Token::number(3, Loc(8, 9)),
-            Token::minus(Loc(10, 11)),
-            Token::minus(Loc(12, 13)),
-            Token::number(10, Loc(13, 15)),
-            Token::semicolon(Loc(15, 16)),
-        ]);
-
-        assert_eq!(
-            ast,
-            Ok(vec![Ast::binop(
-                BinOp::sub(Loc(10, 11)),
-                Ast::binop(
-                    BinOp::add(Loc(2, 3)),
-                    Ast::num(1, Loc(0, 1)),
-                    Ast::binop(
-                        BinOp::new(BinOpKind::Mult, Loc(6, 7)),
-                        Ast::num(2, Loc(4, 5)),
-                        Ast::num(3, Loc(8, 9)),
-                        Loc(4, 9)
-                    ),
-                    Loc(0, 9),
-                ),
-                Ast::uniop(
-                    UniOp::minus(Loc(12, 13)),
-                    Ast::num(10, Loc(13, 15)),
-                    Loc(12, 15)
-                ),
-                Loc(0, 16)
-            )])
-        );
-    }
-
-    #[test]
-    fn lex_parse() {
-        let input = "1 + 2 * 3 - -10;";
-        assert_eq!(
-            parse_body(lex(input).unwrap()),
-            Ok(vec![Ast::binop(
-                BinOp::sub(Loc(10, 11)),
-                Ast::binop(
-                    BinOp::add(Loc(2, 3)),
-                    Ast::num(1, Loc(0, 1)),
-                    Ast::binop(
-                        BinOp::new(BinOpKind::Mult, Loc(6, 7)),
-                        Ast::num(2, Loc(4, 5)),
-                        Ast::num(3, Loc(8, 9)),
-                        Loc(4, 9)
-                    ),
-                    Loc(0, 9),
-                ),
-                Ast::uniop(
-                    UniOp::minus(Loc(12, 13)),
-                    Ast::num(10, Loc(13, 15)),
-                    Loc(12, 15)
-                ),
-                Loc(0, 16)
-            )])
-        )
-    }
-
-    #[test]
-    fn lex_parse_lessthan() {
-        let input = "1+2*3>=-10;";
-        assert_eq!(
-            parse_body(lex(input).unwrap()),
-            Ok(vec![Ast::binop(
-                BinOp::greater_equal(Loc(5, 7)),
-                Ast::binop(
-                    BinOp::add(Loc(1, 2)),
-                    Ast::num(1, Loc(0, 1)),
-                    Ast::binop(
-                        BinOp::mult(Loc(3, 4)),
-                        Ast::num(2, Loc(2, 3)),
-                        Ast::num(3, Loc(4, 5)),
-                        Loc(2, 5),
-                    ),
-                    Loc(0, 5),
-                ),
-                Ast::uniop(
-                    UniOp::minus(Loc(7, 8)),
-                    Ast::num(10, Loc(8, 10)),
-                    Loc(7, 10),
-                ),
-                Loc(0, 11),
-            )])
-        )
     }
 }

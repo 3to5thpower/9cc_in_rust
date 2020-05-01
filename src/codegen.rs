@@ -1,9 +1,36 @@
 use super::{parse, parse::Ast};
-fn gen(ast: &parse::Ast) {
+
+fn gen_val(ast: &Ast) {
+    match ast.value.clone() {
+        parse::AstKind::Variable(offset) => {
+            println!("  mov rax, rbp");
+            println!("  sub rax, {}", offset);
+            println!("  push rax");
+        }
+        _ => panic!("代入の左辺値が変数ではありません"),
+    }
+}
+
+fn gen(ast: &Ast) {
     use parse::AstKind::*;
     use parse::BinOpKind::*;
     use parse::UniOpKind::*;
     match ast.value.clone() {
+        Assign { l, r } => {
+            gen_val(&l);
+            gen(&r);
+            println!("  pop rdi");
+            println!("  pop rax");
+            println!("  mov [rax], rdi");
+            println!("  push rdi");
+        }
+        Stmt(ast) => gen(&ast),
+        Variable(_) => {
+            gen_val(&ast);
+            println!("  pop rax");
+            println!("  mov rax, [rax]");
+            println!("  push rax");
+        }
         Num(n) => println!("  push {}", n),
         BinOp { op, l, r } => {
             gen(&l);
@@ -65,11 +92,22 @@ fn gen(ast: &parse::Ast) {
     }
 }
 
-pub fn codegen(ast: &Vec<Ast>) {
+pub fn codegen(astes: &Vec<Ast>) {
     println!(".intel_syntax noprefix");
     println!(".global main");
     println!("main:");
-    gen(&ast);
-    println!("  pop rax");
+
+    //変数26個分の領域を確保
+    println!("  push rbp");
+    println!("  mov rbp, rsp");
+    println!("  sub rsp, 208");
+
+    for ast in astes {
+        gen(ast);
+        println!("  pop rax");
+    }
+
+    println!("  mov rsp, rbp");
+    println!("  pop rbp");
     println!("  ret");
 }
