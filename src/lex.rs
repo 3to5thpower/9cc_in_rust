@@ -39,6 +39,7 @@ pub enum TokenKind {
     Ident(String),
     Equal,
     Semicolon,
+    Return,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -96,6 +97,9 @@ impl Token {
     }
     fn semicolon(loc: Loc) -> Self {
         Self::new(TokenKind::Semicolon, loc)
+    }
+    fn make_return(loc: Loc) -> Self {
+        Self::new(TokenKind::Return, loc)
     }
 }
 
@@ -190,6 +194,9 @@ fn lex_ident(input: &[u8], pos: usize) -> Result<(Token, usize), LexError> {
     let start = pos;
     let end = recognize_many(input, start, |b| (b as char).is_alphanumeric() || b == b'_');
     let s = from_utf8(&input[start..end]).unwrap();
+    if s[..s.len()] == *"return" {
+        return Ok((Token::make_return(Loc(start, end)), end));
+    }
     Ok((Token::ident(s, Loc(start, end)), end))
 }
 

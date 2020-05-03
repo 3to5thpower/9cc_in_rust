@@ -16,6 +16,13 @@ fn gen(ast: &Ast) {
     use parse::BinOpKind::*;
     use parse::UniOpKind::*;
     match ast.value.clone() {
+        Return(exp) => {
+            gen(&exp);
+            println!("  pop rax");
+            println!("  mov rsp, rbp");
+            println!("  pop rbp");
+            println!("  ret");
+        }
         Assign { l, r } => {
             gen_val(&l);
             gen(&r);

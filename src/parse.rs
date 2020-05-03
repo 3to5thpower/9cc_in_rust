@@ -12,6 +12,7 @@ pub enum AstKind {
     BinOp { op: BinOp, l: Box<Ast>, r: Box<Ast> },
     Stmt(Box<Ast>),
     Assign { l: Box<Ast>, r: Box<Ast> },
+    Return(Box<Ast>),
 }
 pub type Ast = Annot<AstKind>;
 impl Ast {
@@ -45,6 +46,9 @@ impl Ast {
             },
             loc,
         )
+    }
+    fn make_return(expr: Ast, loc: Loc) -> Self {
+        Self::new(AstKind::Return(Box::new(expr)), loc)
     }
 }
 
@@ -174,16 +178,35 @@ fn parse_stmt<Tokens>(
 where
     Tokens: Iterator<Item = Token>,
 {
-    let exp = parse_expr(tokens, vars)?;
-    match tokens.next() {
-        None => Err(ParseError::Eof),
-        Some(tok) => match tok.value {
-            TokenKind::Semicolon => {
-                let loc = exp.loc.merge(&tok.loc);
-                Ok(Ast::stmt(exp, loc))
+    match tokens.peek().ok_or(ParseError::Eof)?.value {
+        TokenKind::Return => {
+            let tok = tokens.next().unwrap();
+            let exp = parse_expr(tokens, vars)?;
+            match tokens.next() {
+                None => Err(ParseError::NotSemicolon(tok)),
+                Some(Token {
+                    value: TokenKind::Semicolon,
+                    loc,
+                }) => {
+                    let loc = tok.loc.merge(&loc);
+                    Ok(Ast::make_return(exp, loc))
+                }
+                _ => Err(ParseError::NotSemicolon(tok)),
             }
-            _ => Err(ParseError::NotSemicolon(tok.clone())),
-        },
+        }
+        _ => {
+            let exp = parse_expr(tokens, vars)?;
+            match tokens.next() {
+                None => Err(ParseError::Eof),
+                Some(tok) => match tok.value {
+                    TokenKind::Semicolon => {
+                        let loc = exp.loc.merge(&tok.loc);
+                        Ok(Ast::stmt(exp, loc))
+                    }
+                    _ => Err(ParseError::NotSemicolon(tok.clone())),
+                },
+            }
+        }
     }
 }
 
@@ -523,6 +546,7 @@ impl fmt::Display for TokenKind {
             Equal => write!(f, "="),
             Semicolon => write!(f, ";"),
             Ident(s) => s.fmt(f),
+            Return => write!(f, "return"),
         }
     }
 }
