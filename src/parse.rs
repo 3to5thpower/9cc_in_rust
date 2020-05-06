@@ -8,11 +8,26 @@ use crate::lex::{Annot, LexError, LexErrorKind, Loc, Token, TokenKind};
 pub enum AstKind {
     Num(u64),
     Variable(usize), // usizeはBPからのオフセット
-    UniOp { op: UniOp, e: Box<Ast> },
-    BinOp { op: BinOp, l: Box<Ast>, r: Box<Ast> },
+    UniOp {
+        op: UniOp,
+        e: Box<Ast>,
+    },
+    BinOp {
+        op: BinOp,
+        l: Box<Ast>,
+        r: Box<Ast>,
+    },
     Stmt(Box<Ast>),
-    Assign { l: Box<Ast>, r: Box<Ast> },
+    Assign {
+        l: Box<Ast>,
+        r: Box<Ast>,
+    },
     Return(Box<Ast>),
+    If {
+        cond: Box<Ast>,
+        expr: Box<Ast>,
+        els: Option<Box<Ast>>,
+    },
 }
 pub type Ast = Annot<AstKind>;
 impl Ast {
@@ -49,6 +64,26 @@ impl Ast {
     }
     fn make_return(expr: Ast, loc: Loc) -> Self {
         Self::new(AstKind::Return(Box::new(expr)), loc)
+    }
+    fn make_if(cond: Ast, stmt: Ast, loc: Loc) -> Self {
+        Self::new(
+            AstKind::If {
+                cond: Box::new(cond),
+                expr: Box::new(stmt),
+                els: None,
+            },
+            loc,
+        )
+    }
+    fn make_if_else(cond: Ast, stmt: Ast, els: Ast, loc: Loc) -> Self {
+        Self::new(
+            AstKind::If {
+                cond: Box::new(cond),
+                expr: Box::new(stmt),
+                els: Some(Box::new(els)),
+            },
+            loc,
+        )
     }
 }
 
@@ -178,7 +213,7 @@ fn parse_stmt<Tokens>(
 where
     Tokens: Iterator<Item = Token>,
 {
-    match tokens.peek().ok_or(ParseError::Eof)?.value {
+    match tokens.peek().ok_or(ParseError::Eof)?.value.clone() {
         TokenKind::Return => {
             let tok = tokens.next().unwrap();
             let exp = parse_expr(tokens, vars)?;
@@ -192,6 +227,29 @@ where
                     Ok(Ast::make_return(exp, loc))
                 }
                 _ => Err(ParseError::NotSemicolon(tok)),
+            }
+        }
+        TokenKind::Ident(s) if s == "if".to_owned() => {
+            let tok = tokens.next().unwrap();
+            let cond = parse_equality(tokens, vars)?;
+            let stmt = parse_stmt(tokens, vars)?;
+            match tokens.peek() {
+                None => {
+                    let loc = tok.loc.merge(&stmt.loc);
+                    Ok(Ast::make_if(cond, stmt, loc))
+                }
+                Some(token) => match token.value.clone() {
+                    TokenKind::Ident(s) if s == "else".to_owned() => {
+                        tokens.next().unwrap();
+                        let els = parse_stmt(tokens, vars)?;
+                        let loc = tok.loc.merge(&els.loc);
+                        Ok(Ast::make_if_else(cond, stmt, els, loc))
+                    }
+                    _ => {
+                        let loc = tok.loc.merge(&stmt.loc);
+                        Ok(Ast::make_if(cond, stmt, loc))
+                    } //_ => Err(ParseError::RebundantExpression(token.clone())),
+                },
             }
         }
         _ => {

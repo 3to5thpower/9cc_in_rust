@@ -1,5 +1,7 @@
 use super::{parse, parse::Ast};
 
+static mut IF: usize = 0;
+
 fn gen_val(ast: &Ast) {
     match ast.value.clone() {
         parse::AstKind::Variable(offset) => {
@@ -16,6 +18,29 @@ fn gen(ast: &Ast) {
     use parse::BinOpKind::*;
     use parse::UniOpKind::*;
     match ast.value.clone() {
+        If { cond, expr, els } => {
+            gen(&cond);
+            println!("  pop rax");
+            println!("  cmp rax, 0");
+            unsafe {
+                match els {
+                    None => {
+                        println!("  je .Lend{}", IF);
+                        gen(&expr);
+                        println!(".Lend{}:", IF);
+                    }
+                    Some(ast) => {
+                        println!("  je .Lelse{}", IF);
+                        gen(&expr);
+                        println!("  jmp .Lend{}", IF);
+                        println!(".Lelse{}:", IF);
+                        gen(&ast);
+                        println!(".Lend{}:", IF);
+                    }
+                }
+                IF += 1;
+            }
+        }
         Return(exp) => {
             gen(&exp);
             println!("  pop rax");
