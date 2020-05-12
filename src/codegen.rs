@@ -1,6 +1,7 @@
 use super::{parse, parse::Ast};
 
 static mut IF: usize = 0;
+static mut WHILE: usize = 0;
 
 fn gen_val(ast: &Ast) {
     match ast.value.clone() {
@@ -41,6 +42,17 @@ fn gen(ast: &Ast) {
                 IF += 1;
             }
         }
+        While { cond, stmt } => unsafe {
+            println!(".Lbegin{}:", WHILE);
+            gen(&cond);
+            println!("  pop rax");
+            println!("  cmp rax, 0");
+            println!("  je .Lend{}", WHILE);
+            gen(&stmt);
+            println!("  jmp .Lbegin{}", WHILE);
+            println!(".Lend{}:", WHILE);
+            WHILE += 1;
+        },
         Return(exp) => {
             gen(&exp);
             println!("  pop rax");

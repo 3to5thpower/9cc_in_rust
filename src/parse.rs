@@ -28,6 +28,10 @@ pub enum AstKind {
         expr: Box<Ast>,
         els: Option<Box<Ast>>,
     },
+    While {
+        cond: Box<Ast>,
+        stmt: Box<Ast>,
+    },
 }
 pub type Ast = Annot<AstKind>;
 impl Ast {
@@ -81,6 +85,15 @@ impl Ast {
                 cond: Box::new(cond),
                 expr: Box::new(stmt),
                 els: Some(Box::new(els)),
+            },
+            loc,
+        )
+    }
+    fn make_while(cond: Ast, stmt: Ast, loc: Loc) -> Self {
+        Self::new(
+            AstKind::While {
+                cond: Box::new(cond),
+                stmt: Box::new(stmt),
             },
             loc,
         )
@@ -251,6 +264,13 @@ where
                     } //_ => Err(ParseError::RebundantExpression(token.clone())),
                 },
             }
+        }
+        TokenKind::Ident(s) if s == "while".to_owned() => {
+            let _tok = tokens.next().unwrap();
+            let cond = parse_equality(tokens, vars)?;
+            let stmt = parse_stmt(tokens, vars)?;
+            let loc = cond.loc.merge(&stmt.loc);
+            Ok(Ast::make_while(cond, stmt, loc))
         }
         _ => {
             let exp = parse_expr(tokens, vars)?;
