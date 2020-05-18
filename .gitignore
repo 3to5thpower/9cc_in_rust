@@ -2,3 +2,4 @@
 tmp*
 *~
 *.o
+compile_flags.txt
