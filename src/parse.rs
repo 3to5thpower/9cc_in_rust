@@ -32,6 +32,7 @@ pub enum AstKind {
         cond: Box<Ast>,
         stmt: Box<Ast>,
     },
+    Block(Vec<Ast>),
 }
 pub type Ast = Annot<AstKind>;
 impl Ast {
@@ -88,6 +89,9 @@ impl Ast {
             },
             loc,
         )
+    }
+    fn make_block(v: Vec<Ast>, loc: Loc) -> Self {
+        Self::new(AstKind::Block(v), loc)
     }
     fn make_while(cond: Ast, stmt: Ast, loc: Loc) -> Self {
         Self::new(
@@ -266,11 +270,36 @@ where
             }
         }
         TokenKind::Ident(s) if s == "while".to_owned() => {
-            let _tok = tokens.next().unwrap();
+            let tok = tokens.next().unwrap();
             let cond = parse_equality(tokens, vars)?;
             let stmt = parse_stmt(tokens, vars)?;
-            let loc = cond.loc.merge(&stmt.loc);
+            let loc = tok.loc.merge(&stmt.loc);
             Ok(Ast::make_while(cond, stmt, loc))
+        }
+        TokenKind::BlockOpen => {
+            let tok = tokens.next().unwrap();
+            let mut loc = tok.loc;
+            let mut v = vec![];
+            loop {
+                match tokens.peek() {
+                    None => {
+                        return Err(ParseError::Eof);
+                    }
+                    Some(token) => match token.value.clone() {
+                        TokenKind::BlockClose => {
+                            loc = loc.merge(&token.loc);
+                            tokens.next().unwrap();
+                            break;
+                        }
+                        _ => {
+                            //tokens.next();
+                            let stmt = parse_stmt(tokens, vars)?;
+                            v.push(stmt);
+                        }
+                    },
+                }
+            }
+            Ok(Ast::make_block(v, loc))
         }
         _ => {
             let exp = parse_expr(tokens, vars)?;
@@ -625,6 +654,8 @@ impl fmt::Display for TokenKind {
             Semicolon => write!(f, ";"),
             Ident(s) => s.fmt(f),
             Return => write!(f, "return"),
+            BlockOpen => write!(f, "{{"),
+            BlockClose => write!(f, "}}"),
         }
     }
 }

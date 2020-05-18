@@ -19,6 +19,12 @@ fn gen(ast: &Ast) {
     use parse::BinOpKind::*;
     use parse::UniOpKind::*;
     match ast.value.clone() {
+        Block(vec) => {
+            for ast in vec {
+                gen(&ast);
+                println!("  pop rax");
+            }
+        }
         If { cond, expr, els } => {
             gen(&cond);
             println!("  pop rax");
