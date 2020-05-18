@@ -32,7 +32,11 @@ assert 3 'if(1 > 3) a = 4; else b = 3;return b;'
 assert 4 'if(1 < 3) a = 4; else b = 3;return a;'
 assert 3 'a = 0; while(a<3) a = a + 1; return a;'
 assert 10 'ten = 0; while(ten < 10) ten = ten + 1; return ten;'
+<<<<<<< HEAD
 assert 1 'i = 0; {i = i + 1;} return i;'
 assert 10 'ten = 0; for(ten = 0;)'
+=======
+assert 55 'a = 0; for(i = 0; i < 10; i = i + 1;) a = a + (i + 1); return a;'
+>>>>>>> origin/HEAD
 
 echo OK

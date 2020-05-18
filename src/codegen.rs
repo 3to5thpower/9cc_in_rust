@@ -2,6 +2,7 @@ use super::{parse, parse::Ast};
 
 static mut IF: usize = 0;
 static mut WHILE: usize = 0;
+static mut FOR: usize = 0;
 
 fn gen_val(ast: &Ast) {
     match ast.value.clone() {
@@ -58,6 +59,30 @@ fn gen(ast: &Ast) {
             println!("  jmp .Lbegin{}", WHILE);
             println!(".Lend{}:", WHILE);
             WHILE += 1;
+        },
+        For {
+            declare,
+            cond,
+            update,
+            stmt,
+        } => unsafe {
+            if let Some(ast) = declare {
+                gen(&ast);
+            }
+            println!(".Lbegin{}:", FOR);
+            if let Some(ast) = cond {
+                gen(&ast);
+            }
+            println!("  pop rax");
+            println!("  cmp rax, 0");
+            println!("  je .Lend{}", FOR);
+            gen(&stmt);
+            if let Some(ast) = update {
+                gen(&ast);
+            }
+            println!("  jmp .Lbegin{}", FOR);
+            println!(".Lend{}:", FOR);
+            FOR += 1;
         },
         Return(exp) => {
             gen(&exp);
