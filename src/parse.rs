@@ -32,16 +32,13 @@ pub enum AstKind {
         cond: Box<Ast>,
         stmt: Box<Ast>,
     },
-<<<<<<< HEAD
     Block(Vec<Ast>),
-=======
     For {
         declare: Option<Box<Ast>>,
         cond: Option<Box<Ast>>,
         update: Option<Box<Ast>>,
         stmt: Box<Ast>,
     },
->>>>>>> origin/HEAD
 }
 pub type Ast = Annot<AstKind>;
 impl Ast {
@@ -326,7 +323,7 @@ where
                 }
             }
             Ok(Ast::make_block(v, loc))
-        },
+        }
         TokenKind::Ident(s) if s == "for".to_owned() => {
             let tok = tokens.next().unwrap();
             match tokens.next() {
@@ -396,7 +393,7 @@ where
             let stmt = parse_stmt(tokens, vars)?;
             let loc = tok.loc.merge(&stmt.loc);
             Ok(Ast::make_for(declare, cond, update, stmt, loc))
-
+        }
         _ => {
             let exp = parse_expr(tokens, vars)?;
             match tokens.next() {
