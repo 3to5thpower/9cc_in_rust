@@ -42,6 +42,7 @@ pub enum TokenKind {
     Return,
     BlockOpen,
     BlockClose,
+    Comma,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -109,6 +110,9 @@ impl Token {
     fn block_close(loc: Loc) -> Self {
         Self::new(TokenKind::BlockClose, loc)
     }
+    fn comma(loc: Loc) -> Self {
+        Self::new(TokenKind::Comma, loc)
+    }
 }
 
 pub type LexError = Annot<LexErrorKind>;
@@ -170,6 +174,9 @@ pub fn lex(input: &str) -> Result<Vec<Token>, LexError> {
                 lex_a_token!(consume_byte(&input, pos, b'}')
                     .map(|p| (Token::block_close(Loc(pos, p.1)), p.1)))
             }
+            b',' => lex_a_token!(
+                consume_byte(&input, pos, b',').map(|p| (Token::comma(Loc(pos, p.1)), p.1))
+            ),
             b'0'..=b'9' => lex_a_token!(lex_number(input, pos)),
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => lex_a_token!(lex_ident(input, pos)),
             b' ' | b'\n' | b'\t' => pos += 1,

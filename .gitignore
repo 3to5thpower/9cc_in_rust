@@ -3,3 +3,4 @@ tmp*
 *~
 *.o
 compile_flags.txt
+a.out

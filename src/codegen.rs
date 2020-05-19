@@ -1,8 +1,6 @@
 use super::{parse, parse::Ast};
 
-static mut IF: usize = 0;
-static mut WHILE: usize = 0;
-static mut FOR: usize = 0;
+static mut LABEL: usize = 0;
 
 fn gen_val(ast: &Ast) {
     match ast.value.clone() {
@@ -20,6 +18,16 @@ fn gen(ast: &Ast) {
     use parse::BinOpKind::*;
     use parse::UniOpKind::*;
     match ast.value.clone() {
+        Fun { name, args } => {
+            let regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
+            for (i, ast) in args.iter().enumerate() {
+                gen(&ast);
+                println!("  pop rax");
+                println!("  mov {}, rax", regs[i]);
+            }
+            println!("  call {}", name);
+            println!("  push rax");
+        }
         Block(vec) => {
             for ast in vec {
                 gen(&ast);
@@ -33,32 +41,32 @@ fn gen(ast: &Ast) {
             unsafe {
                 match els {
                     None => {
-                        println!("  je .Lend{}", IF);
+                        println!("  je .Lend{}", LABEL);
                         gen(&expr);
-                        println!(".Lend{}:", IF);
+                        println!(".Lend{}:", LABEL);
                     }
                     Some(ast) => {
-                        println!("  je .Lelse{}", IF);
+                        println!("  je .Lelse{}", LABEL);
                         gen(&expr);
-                        println!("  jmp .Lend{}", IF);
-                        println!(".Lelse{}:", IF);
+                        println!("  jmp .Lend{}", LABEL);
+                        println!(".Lelse{}:", LABEL);
                         gen(&ast);
-                        println!(".Lend{}:", IF);
+                        println!(".Lend{}:", LABEL);
                     }
                 }
-                IF += 1;
+                LABEL += 1;
             }
         }
         While { cond, stmt } => unsafe {
-            println!(".Lbegin{}:", WHILE);
+            println!(".Lbegin{}:", LABEL);
             gen(&cond);
             println!("  pop rax");
             println!("  cmp rax, 0");
-            println!("  je .Lend{}", WHILE);
+            println!("  je .Lend{}", LABEL);
             gen(&stmt);
-            println!("  jmp .Lbegin{}", WHILE);
-            println!(".Lend{}:", WHILE);
-            WHILE += 1;
+            println!("  jmp .Lbegin{}", LABEL);
+            println!(".Lend{}:", LABEL);
+            LABEL += 1;
         },
         For {
             declare,
@@ -69,20 +77,20 @@ fn gen(ast: &Ast) {
             if let Some(ast) = declare {
                 gen(&ast);
             }
-            println!(".Lbegin{}:", FOR);
+            println!(".Lbegin{}:", LABEL);
             if let Some(ast) = cond {
                 gen(&ast);
             }
             println!("  pop rax");
             println!("  cmp rax, 0");
-            println!("  je .Lend{}", FOR);
+            println!("  je .Lend{}", LABEL);
             gen(&stmt);
             if let Some(ast) = update {
                 gen(&ast);
             }
-            println!("  jmp .Lbegin{}", FOR);
-            println!(".Lend{}:", FOR);
-            FOR += 1;
+            println!("  jmp .Lbegin{}", LABEL);
+            println!(".Lend{}:", LABEL);
+            LABEL += 1;
         },
         Return(exp) => {
             gen(&exp);
