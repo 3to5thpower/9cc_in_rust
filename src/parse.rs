@@ -208,6 +208,66 @@ pub enum ParseError {
     NotAddressExp(Token),
 }
 
+macro_rules! expect_token {
+    ($tokens: expr, $token: pat) => {
+        match $tokens.next() {
+            None => return Err(ParseError::Eof),
+            Some(tok) => match tok.value.clone() {
+                $token => (),
+                _ => return Err(ParseError::UnexpectedToken(tok.clone())),
+            },
+        }
+    };
+}
+macro_rules! expect_semicolon {
+    ($tokens: expr) => {
+        match $tokens.next() {
+            None => return Err(ParseError::Eof),
+            Some(tok) => match tok.value.clone() {
+                TokenKind::Semicolon => (),
+                _ => return Err(ParseError::NotSemicolon(tok.clone())),
+            },
+        }
+    };
+}
+macro_rules! expect_paren_close {
+    ($tokens: expr) => {
+        match $tokens.next() {
+            None => return Err(ParseError::Eof),
+            Some(tok) => match tok.value.clone() {
+                TokenKind::Rparen => (),
+                _ => return Err(ParseError::UnClosedOpenParen(tok.clone())),
+            },
+        }
+    };
+}
+
+macro_rules! parse_vectors {
+    ($tokens: expr, $vars: expr, $end_token: pat, $sep: pat, $parser: expr) => {{
+        let mut v = vec![];
+        loop {
+            match $tokens.peek() {
+                None => return Err(ParseError::Eof),
+                Some(token) => match token.value.clone() {
+                    $end_token => {
+                        $tokens.next().unwrap();
+                        break;
+                    }
+                    $sep => {
+                        $tokens.next();
+                        continue;
+                    }
+                    _ => {
+                        let stmt = $parser($tokens, $vars)?;
+                        v.push(stmt);
+                    }
+                },
+            }
+        }
+        v
+    }};
+}
+
 pub fn parse(input: &str) -> Result<Vec<Ast>, Error> {
     let tokens = match crate::lex::lex(input) {
         Ok(v) => v,
@@ -278,23 +338,9 @@ where
         TokenKind::Ident(s) if s == "if".to_owned() => {
             let tok = tokens.next().unwrap();
 
-            //condition-----------------------------
-            match tokens.next() {
-                None => return Err(ParseError::Eof),
-                Some(tok) => match tok.value.clone() {
-                    TokenKind::Lparen => (),
-                    _ => return Err(ParseError::UnexpectedToken(tok)),
-                },
-            }
+            expect_token!(tokens, TokenKind::Lparen);
             let cond = parse_expr(tokens, vars)?;
-            match tokens.next() {
-                None => return Err(ParseError::Eof),
-                Some(tok) => match tok.value.clone() {
-                    TokenKind::Rparen => (),
-                    _ => return Err(ParseError::UnexpectedToken(tok)),
-                },
-            }
-            //condition------------------------------
+            expect_paren_close!(tokens);
 
             let stmt = parse_stmt(tokens, vars)?;
 
@@ -319,21 +365,9 @@ where
         }
         TokenKind::Ident(s) if s == "while".to_owned() => {
             let tok = tokens.next().unwrap();
-            match tokens.next() {
-                None => return Err(ParseError::Eof),
-                Some(tok) => match tok.value.clone() {
-                    TokenKind::Lparen => (),
-                    _ => return Err(ParseError::UnexpectedToken(tok)),
-                },
-            }
+            expect_token!(tokens, TokenKind::Lparen);
             let cond = parse_expr(tokens, vars)?;
-            match tokens.next() {
-                None => return Err(ParseError::Eof),
-                Some(tok) => match tok.value.clone() {
-                    TokenKind::Rparen => (),
-                    _ => return Err(ParseError::UnexpectedToken(tok)),
-                },
-            }
+            expect_paren_close!(tokens);
 
             let stmt = parse_stmt(tokens, vars)?;
             let loc = tok.loc.merge(&stmt.loc);
@@ -342,16 +376,8 @@ where
         TokenKind::Ident(s) if s == "for".to_owned() => {
             let tok = tokens.next().unwrap();
 
-            //次のトークンを見て"("でなかったらエラー
-            match tokens.next() {
-                None => return Err(ParseError::Eof),
-                Some(tok) => match tok.value.clone() {
-                    TokenKind::Lparen => (),
-                    _ => return Err(ParseError::UnexpectedToken(tok.clone())),
-                },
-            }
+            expect_token!(tokens, TokenKind::Lparen);
 
-            //forの宣言部分[expr?;]
             let declare = match tokens.peek() {
                 None => return Err(ParseError::Eof),
                 Some(token) => match token.value.clone() {
@@ -361,19 +387,12 @@ where
                     }
                     _ => {
                         let declare = parse_expr(tokens, vars)?;
-                        //現在tokenは;を指しているはず
-                        match tokens.next() {
-                            None => return Err(ParseError::Eof),
-                            Some(tok) => match tok.value.clone() {
-                                TokenKind::Semicolon => Some(declare),
-                                _ => return Err(ParseError::NotSemicolon(tok.clone())),
-                            },
-                        }
+                        expect_semicolon!(tokens);
+                        Some(declare)
                     }
                 },
             };
 
-            //forの継続条件[expr?;]
             let cond = match tokens.peek() {
                 None => return Err(ParseError::Eof),
                 Some(token) => match token.value.clone() {
@@ -383,18 +402,12 @@ where
                     }
                     _ => {
                         let cond = parse_expr(tokens, vars)?;
-                        match tokens.next() {
-                            None => return Err(ParseError::Eof),
-                            Some(tok) => match tok.value.clone() {
-                                TokenKind::Semicolon => Some(cond),
-                                _ => return Err(ParseError::NotSemicolon(tok.clone())),
-                            },
-                        }
+                        expect_semicolon!(tokens);
+                        Some(cond)
                     }
                 },
             };
 
-            //forの更新条件
             let update = match tokens.peek() {
                 None => return Err(ParseError::Eof),
                 Some(token) => match token.value.clone() {
@@ -403,14 +416,7 @@ where
                 },
             };
 
-            //UnClosedOpenParen
-            match tokens.next() {
-                None => return Err(ParseError::Eof),
-                Some(tok) => match tok.value.clone() {
-                    TokenKind::Rparen => (),
-                    _ => return Err(ParseError::UnClosedOpenParen(tok)),
-                },
-            }
+            expect_paren_close!(tokens);
 
             let stmt = parse_stmt(tokens, vars)?;
             let loc = tok.loc.merge(&stmt.loc);
@@ -419,39 +425,20 @@ where
         TokenKind::BlockOpen => {
             let tok = tokens.next().unwrap();
             let mut loc = tok.loc;
-            let mut v = vec![];
-            loop {
-                match tokens.peek() {
-                    None => {
-                        return Err(ParseError::Eof);
-                    }
-                    Some(token) => match token.value.clone() {
-                        TokenKind::BlockClose => {
-                            loc = loc.merge(&token.loc);
-                            tokens.next().unwrap();
-                            break;
-                        }
-                        _ => {
-                            let stmt = parse_stmt(tokens, vars)?;
-                            v.push(stmt);
-                        }
-                    },
-                }
-            }
+            let v = parse_vectors!(
+                tokens,
+                vars,
+                TokenKind::BlockClose,
+                TokenKind::Semicolon,
+                parse_stmt
+            );
+            loc = loc.merge(&v[v.len() - 1].loc);
             Ok(Ast::make_block(v, loc))
         }
         _ => {
             let exp = parse_expr(tokens, vars)?;
-            match tokens.next() {
-                None => Err(ParseError::Eof),
-                Some(tok) => match tok.value {
-                    TokenKind::Semicolon => {
-                        let loc = exp.loc.merge(&tok.loc);
-                        Ok(Ast::stmt(exp, loc))
-                    }
-                    _ => Err(ParseError::NotSemicolon(tok.clone())),
-                },
-            }
+            expect_semicolon!(tokens);
+            Ok(exp)
         }
     }
 }
@@ -676,29 +663,16 @@ where
             TokenKind::Num(n) => Ok(Ast::num(n, tok.loc)),
             TokenKind::Ident(s) => match tokens.peek() {
                 Some(tok) if tok.value == TokenKind::Lparen => {
-                    let mut args = vec![];
                     let mut loc = tok.loc.clone();
                     tokens.next();
-                    loop {
-                        match tokens.peek() {
-                            None => return Err(ParseError::Eof),
-                            Some(t) => match t.value.clone() {
-                                TokenKind::Comma => {
-                                    tokens.next();
-                                    continue;
-                                }
-                                TokenKind::Rparen => {
-                                    loc = loc.merge(&t.loc);
-                                    tokens.next();
-                                    break;
-                                }
-                                _ => {
-                                    let ast = parse_expr(tokens, vars)?;
-                                    args.push(ast);
-                                }
-                            },
-                        }
-                    }
+                    let args = parse_vectors!(
+                        tokens,
+                        vars,
+                        TokenKind::Rparen,
+                        TokenKind::Comma,
+                        parse_expr
+                    );
+                    loc = loc.merge(&args[args.len() - 1].loc);
                     Ok(Ast::make_function(s, args, loc))
                 }
                 _ => {
