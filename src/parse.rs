@@ -692,16 +692,17 @@ where
                 Some(tok) if tok.value == TokenKind::Lparen => {
                     let mut loc = tok.loc.clone();
                     tokens.next();
-                    /*let args = parse_vectors!(
+                    let args = parse_vectors!(
                         tokens,
                         vars,
                         TokenKind::Rparen,
                         TokenKind::Comma,
                         parse_expr
                     );
-                    loc = loc.merge(&args[args.len() - 1].loc);*/
-                    tokens.next();
-                    Ok(Ast::make_function(s, vec![], loc))
+                    if args.len() != 0 {
+                        loc = loc.merge(&args[args.len() - 1].loc);
+                    }
+                    Ok(Ast::make_function(s, args, loc))
                 }
                 _ => {
                     let max = vars.iter().find(|&(name, _)| s == *name);
