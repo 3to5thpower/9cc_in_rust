@@ -43,6 +43,11 @@ pub enum AstKind {
         name: String,
         args: Vec<Ast>,
     },
+    FunDeclare {
+        name: String,
+        args: Vec<Ast>,
+        body: Vec<Ast>,
+    },
 }
 pub type Ast = Annot<AstKind>;
 impl Ast {
@@ -131,6 +136,9 @@ impl Ast {
     }
     fn make_function(name: String, args: Vec<Ast>, loc: Loc) -> Self {
         Self::new(AstKind::Fun { name, args }, loc)
+    }
+    fn dec_fun(name: String, args: Vec<Ast>, body: Vec<Ast>, loc: Loc) -> Self {
+        Self::new(AstKind::FunDeclare { name, args, body }, loc)
     }
 }
 
@@ -269,47 +277,62 @@ macro_rules! parse_vectors {
 }
 
 pub fn parse(input: &str) -> Result<Vec<Ast>, Error> {
-    let tokens = match crate::lex::lex(input) {
-        Ok(v) => v,
-        Err(e) => return Err(Error::Lexer(e)),
-    };
+    use crate::lex::lex;
+    let tokens = lex(input).map_err(|e| Error::Lexer(e))?;
     //println!("{:?}", tokens);
-    let res = match parse_body(tokens) {
-        Ok(v) => v,
-        Err(e) => return Err(Error::Parser(e)),
-    };
-    Ok(res)
+
+    fn parse_body(tokens: Vec<Token>) -> Result<Vec<Ast>, ParseError> {
+        let mut tokens = tokens.into_iter().peekable();
+        Ok(parse_program(&mut tokens)?)
+    }
+
+    Ok(parse_body(tokens).map_err(|e| Error::Parser(e))?)
 }
 
-fn parse_body(tokens: Vec<Token>) -> Result<Vec<Ast>, ParseError> {
-    // peekはイテレータが現在指している値をただ返す
-    let mut tokens = tokens.into_iter().peekable();
-    let mut res = vec![];
-    let mut vars = vec![];
-    parse_program(&mut tokens, &mut res, &mut vars)?;
-    Ok(res)
-}
-
-fn parse_program<Tokens>(
-    tokens: &mut Peekable<Tokens>,
-    v: &mut Vec<Ast>,
-    vars: &mut Vec<(String, usize)>,
-) -> Result<(), ParseError>
+fn parse_program<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Vec<Ast>, ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
-    match tokens.peek() {
-        Some(_) => {
-            let stmt = match parse_stmt(tokens, vars) {
-                Ok(stmt) => stmt,
-                Err(e) => return Err(e),
-            };
-            v.push(stmt);
-            parse_program(tokens, v, vars)?;
-            Ok(())
+    let mut funs = vec![];
+    loop {
+        match tokens.peek() {
+            None => return Ok(funs),
+            Some(_) => funs.push(parse_fun(tokens)?),
         }
-        None => Ok(()),
     }
+}
+
+fn parse_fun<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
+where
+    Tokens: Iterator<Item = Token>,
+{
+    let (funname, mut loc) = match tokens.next() {
+        None => return Err(ParseError::Eof),
+        Some(tok) => match tok.value.clone() {
+            TokenKind::Ident(name) => (name.to_owned(), tok.loc.clone()),
+            _ => return Err(ParseError::UnexpectedToken(tok)),
+        },
+    };
+    expect_token!(tokens, TokenKind::Lparen);
+    expect_paren_close!(tokens);
+    expect_token!(tokens, TokenKind::BlockOpen);
+    let mut stmts = vec![];
+    let mut vars = vec![];
+    loop {
+        match tokens.peek() {
+            None => return Err(ParseError::Eof),
+            Some(tok) => match tok.value.clone() {
+                TokenKind::BlockClose => break,
+                _ => {
+                    loc = loc.merge(&tok.loc);
+                    let ast = parse_stmt(tokens, &mut vars)?;
+                    stmts.push(ast);
+                }
+            },
+        }
+    }
+    tokens.next();
+    Ok(Ast::dec_fun(funname, vec![], stmts, loc))
 }
 
 fn parse_stmt<Tokens>(
@@ -500,6 +523,10 @@ where
             ..
         })
         | Some(Token {
+            value: TokenKind::BlockClose,
+            ..
+        })
+        | Some(Token {
             value: TokenKind::Comma,
             ..
         }) => Ok(Ast::stmt(equality.clone(), equality.loc.clone())),
@@ -665,15 +692,16 @@ where
                 Some(tok) if tok.value == TokenKind::Lparen => {
                     let mut loc = tok.loc.clone();
                     tokens.next();
-                    let args = parse_vectors!(
+                    /*let args = parse_vectors!(
                         tokens,
                         vars,
                         TokenKind::Rparen,
                         TokenKind::Comma,
                         parse_expr
                     );
-                    loc = loc.merge(&args[args.len() - 1].loc);
-                    Ok(Ast::make_function(s, args, loc))
+                    loc = loc.merge(&args[args.len() - 1].loc);*/
+                    tokens.next();
+                    Ok(Ast::make_function(s, vec![], loc))
                 }
                 _ => {
                     let max = vars.iter().find(|&(name, _)| s == *name);

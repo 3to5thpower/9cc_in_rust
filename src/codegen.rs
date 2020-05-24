@@ -1,6 +1,7 @@
 use super::{parse, parse::Ast};
 
 static mut LABEL: usize = 0;
+static REGS: [&str; 6] = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
 
 fn gen_val(ast: &Ast) {
     match ast.value.clone() {
@@ -18,12 +19,29 @@ fn gen(ast: &Ast) {
     use parse::BinOpKind::*;
     use parse::UniOpKind::*;
     match ast.value.clone() {
+        FunDeclare {
+            name,
+            args: _,
+            body,
+        } => {
+            println!("{}:", name);
+            //変数10個分の領域を確保
+            println!("  push rbp");
+            println!("  mov rbp, rsp");
+            println!("  sub rsp, 80");
+            for ast in body {
+                gen(&ast);
+                println!("  pop rax");
+            }
+            println!("  mov rsp, rbp");
+            println!("  pop rbp");
+            println!("  ret");
+        }
         Fun { name, args } => {
-            let regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
             for (i, ast) in args.iter().enumerate() {
                 gen(&ast);
                 println!("  pop rax");
-                println!("  mov {}, rax", regs[i]);
+                println!("  mov {}, rax", REGS[i]);
             }
             println!("  call {}", name);
             println!("  push rax");
@@ -178,19 +196,8 @@ fn gen(ast: &Ast) {
 pub fn codegen(astes: &Vec<Ast>) {
     println!(".intel_syntax noprefix");
     println!(".global main");
-    println!("main:");
-
-    //変数26個分の領域を確保
-    println!("  push rbp");
-    println!("  mov rbp, rsp");
-    println!("  sub rsp, 208");
-
     for ast in astes {
         gen(ast);
         println!("  pop rax");
     }
-
-    println!("  mov rsp, rbp");
-    println!("  pop rbp");
-    println!("  ret");
 }
