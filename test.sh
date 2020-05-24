@@ -15,6 +15,24 @@ assert() {
   fi
 }
 
+assert_link() {
+  expected="$1"
+  input="$2"
+  link_src="$3"
+  cargo run "$input" > tmp.s
+  echo "$link_src" > tmp.c
+  cc -o tmp tmp.s tmp.c
+  ./tmp
+  actual="$?"
+
+  if [ "$actual" = "$expected" ]; then
+    echo "$input => $actual"
+  else
+    echo "$input => $expected expected, but got $actual"
+    exit 1
+  fi
+}
+
 assert 41 "12 + 34 - 5;"
 assert 47 '5+6*7;'
 assert 15 '5*(9-6);'
@@ -46,5 +64,10 @@ for(i = 0; i < 10; i = i + 1) {
 ans = a + b;
 return ans;'
 
+assert_link 5 'return foo(2, 3);' '
+int foo(int x, int y){
+  printf("%d, %d ok\n", x, y);
+  return x+y;
+}'
 
 echo OK
