@@ -128,7 +128,7 @@ where
         }
         Ident(s) if s == "if".to_owned() => {
             let tok = tokens.next().unwrap();
-            expect_token!(tokens, TokenKind::Lparen);
+            expect_token!(tokens, Lparen);
             let cond = parse_expr(tokens, vars)?;
             expect_paren_close!(tokens);
             let stmt = parse_stmt(tokens, vars)?;
@@ -138,7 +138,7 @@ where
                 return Ok(Ast::make_if(cond, stmt, loc));
             }
             let tok = tokens.next().unwrap();
-            if let TokenKind::Ident(s) = tok.value {
+            if let Ident(s) = tok.value {
                 if s == "else" {
                     let els = parse_stmt(tokens, vars)?;
                     let loc = tok.loc.merge(&els.loc);
@@ -150,17 +150,17 @@ where
         }
         Ident(s) if s == "while".to_owned() => {
             let tok = tokens.next().unwrap();
-            expect_token!(tokens, TokenKind::Lparen);
+            expect_token!(tokens, Lparen);
             let cond = parse_expr(tokens, vars)?;
             expect_paren_close!(tokens);
             let stmt = parse_stmt(tokens, vars)?;
             let loc = tok.loc.merge(&stmt.loc);
             Ok(Ast::make_while(cond, stmt, loc))
         }
-        TokenKind::Ident(s) if s == "for".to_owned() => {
+        Ident(s) if s == "for".to_owned() => {
             let tok = tokens.next().unwrap();
             let mut loc = tok.loc;
-            expect_token!(tokens, TokenKind::Lparen);
+            expect_token!(tokens, Lparen);
             let declare = parse_or!(tokens, vars, Semicolon, parse_expr);
             expect_semicolon!(tokens);
             let cond = parse_or!(tokens, vars, Semicolon, parse_expr);
@@ -174,14 +174,10 @@ where
         TokenKind::BlockOpen => {
             let tok = tokens.next().unwrap();
             let mut loc = tok.loc;
-            let v = parse_vectors!(
-                tokens,
-                vars,
-                TokenKind::BlockClose,
-                TokenKind::Semicolon,
-                parse_stmt
-            );
-            loc = loc.merge(&v[v.len() - 1].loc);
+            let v = parse_vectors!(tokens, vars, BlockClose, Semicolon, parse_stmt);
+            if v.len() != 0 {
+                loc = loc.merge(&v[v.len() - 1].loc);
+            }
             Ok(Ast::make_block(v, loc))
         }
         _ => {
