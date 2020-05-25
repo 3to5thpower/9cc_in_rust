@@ -1,11 +1,11 @@
-use super::{parse, parse::Ast};
+use crate::ast::{Ast, AstKind, BinOpKind, UniOpKind};
 
 static mut LABEL: usize = 0;
 static REGS: [&str; 6] = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
 
 fn gen_val(ast: &Ast) {
     match ast.value.clone() {
-        parse::AstKind::Variable(offset) => {
+        AstKind::Variable(offset) => {
             println!("  mov rax, rbp");
             println!("  sub rax, {}", offset);
             println!("  push rax");
@@ -15,9 +15,9 @@ fn gen_val(ast: &Ast) {
 }
 
 fn gen(ast: &Ast) {
-    use parse::AstKind::*;
-    use parse::BinOpKind::*;
-    use parse::UniOpKind::*;
+    use AstKind::*;
+    use BinOpKind::*;
+    use UniOpKind::*;
     match ast.value.clone() {
         FunDeclare {
             name,

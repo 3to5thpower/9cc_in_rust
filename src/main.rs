@@ -1,7 +1,9 @@
 #![allow(dead_code)]
 use std::env;
 
+mod ast;
 mod codegen;
+mod error;
 mod lex;
 mod parse;
 
@@ -15,7 +17,7 @@ fn main() -> Result<(), String> {
         Ok(ast) => ast,
         Err(e) => {
             e.show_diagnostic(&args[1]);
-            parse::show_trace(e);
+            error::show_trace(e);
             return Ok(());
         }
     };
