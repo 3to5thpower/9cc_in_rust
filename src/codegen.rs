@@ -3,65 +3,6 @@ use crate::ast::{Ast, AstKind, BinOpKind, UniOpKind};
 static mut LABEL: usize = 0;
 static REGS: [&str; 6] = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
 
-fn cnt_var(ast: &Ast) -> usize {
-    use std::cmp::max;
-    use AstKind::*;
-    match ast.value.clone() {
-        Num(_) => 0,
-        BinOp { op: _, l, r } => max(cnt_var(&l), cnt_var(&r)),
-        UniOp { op: _, e } => cnt_var(&e),
-        Variable(offset) => offset,
-        Stmt(ast) => cnt_var(&ast),
-        Assign { l, r } => max(cnt_var(&l), cnt_var(&r)),
-        Return(ast) => cnt_var(&ast),
-        If { cond, expr, els } => max(
-            cnt_var(&cond),
-            max(cnt_var(&expr), els.map_or(0, |v| cnt_var(&v))),
-        ),
-        While { cond, stmt } => max(cnt_var(&cond), cnt_var(&stmt)),
-        Block(v) => {
-            let v: Vec<usize> = v.iter().map(|ast| cnt_var(&ast)).collect();
-            *v.iter().max().unwrap_or(&0)
-        }
-        For {
-            declare,
-            cond,
-            update,
-            stmt,
-        } => max(
-            max(
-                declare.map_or(0, |d| cnt_var(&d)),
-                cond.map_or(0, |c| cnt_var(&c)),
-            ),
-            max(update.map_or(0, |u| cnt_var(&u)), cnt_var(&stmt)),
-        ),
-        Fun { name: _, args } => {
-            let v: Vec<usize> = args.iter().map(|ast| cnt_var(&ast)).collect();
-            *v.iter().max().unwrap_or(&0)
-        }
-        FunDeclare {
-            name: _,
-            args,
-            body,
-        } => {
-            let v: Vec<usize> = args.iter().map(|ast| cnt_var(&ast)).collect();
-            let u: Vec<usize> = body.iter().map(|ast| cnt_var(&ast)).collect();
-            max(*v.iter().max().unwrap_or(&0), *u.iter().max().unwrap_or(&0))
-        }
-    }
-}
-
-fn gen_val(ast: &Ast) {
-    match ast.value.clone() {
-        AstKind::Variable(offset) => {
-            println!("  mov rax, rbp");
-            println!("  sub rax, {}", offset);
-            println!("  push rax");
-        }
-        _ => unreachable!(),
-    }
-}
-
 fn gen(ast: &Ast) {
     use AstKind::*;
     use BinOpKind::*;
@@ -73,6 +14,11 @@ fn gen(ast: &Ast) {
             println!("  push rbp");
             println!("  mov rbp, rsp");
             println!("  sub rsp, {}", cnt_var(&ast) + 8);
+            for (i, ast) in args.iter().enumerate() {
+                println!("  mov rax, rbp");
+                println!("  sub rax, {}", 8 * (i + 1));
+                println!("  mov [rax], {}", REGS[i]);
+            }
             for ast in body {
                 gen(&ast);
                 println!("  pop rax");
@@ -236,6 +182,16 @@ fn gen(ast: &Ast) {
         },
     }
 }
+fn gen_val(ast: &Ast) {
+    match ast.value {
+        AstKind::Variable(offset) => {
+            println!("  mov rax, rbp");
+            println!("  sub rax, {}", offset);
+            println!("  push rax");
+        }
+        _ => unreachable!(),
+    }
+}
 
 pub fn codegen(astes: &Vec<Ast>) {
     println!(".intel_syntax noprefix");
@@ -243,5 +199,53 @@ pub fn codegen(astes: &Vec<Ast>) {
     for ast in astes {
         gen(ast);
         println!("  pop rax");
+    }
+}
+
+fn cnt_var(ast: &Ast) -> usize {
+    use std::cmp::max;
+    use AstKind::*;
+    match ast.value.clone() {
+        Num(_) => 0,
+        BinOp { op: _, l, r } => max(cnt_var(&l), cnt_var(&r)),
+        UniOp { op: _, e } => cnt_var(&e),
+        Variable(offset) => offset,
+        Stmt(ast) => cnt_var(&ast),
+        Assign { l, r } => max(cnt_var(&l), cnt_var(&r)),
+        Return(ast) => cnt_var(&ast),
+        If { cond, expr, els } => max(
+            cnt_var(&cond),
+            max(cnt_var(&expr), els.map_or(0, |v| cnt_var(&v))),
+        ),
+        While { cond, stmt } => max(cnt_var(&cond), cnt_var(&stmt)),
+        Block(v) => {
+            let v: Vec<usize> = v.iter().map(|ast| cnt_var(&ast)).collect();
+            *v.iter().max().unwrap_or(&0)
+        }
+        For {
+            declare,
+            cond,
+            update,
+            stmt,
+        } => max(
+            max(
+                declare.map_or(0, |d| cnt_var(&d)),
+                cond.map_or(0, |c| cnt_var(&c)),
+            ),
+            max(update.map_or(0, |u| cnt_var(&u)), cnt_var(&stmt)),
+        ),
+        Fun { name: _, args } => {
+            let v: Vec<usize> = args.iter().map(|ast| cnt_var(&ast)).collect();
+            *v.iter().max().unwrap_or(&0)
+        }
+        FunDeclare {
+            name: _,
+            args,
+            body,
+        } => {
+            let v: Vec<usize> = args.iter().map(|ast| cnt_var(&ast)).collect();
+            let u: Vec<usize> = body.iter().map(|ast| cnt_var(&ast)).collect();
+            max(*v.iter().max().unwrap_or(&0), *u.iter().max().unwrap_or(&0))
+        }
     }
 }

@@ -94,5 +94,53 @@ main(){
     return a;
 }
 '
+assert 3 'fun(x){return x;}main(){return fun(3);}'
+assert 4 'fun(x, y){return x + y;}main(){return fun(2, 2);}'
+
+
+assert 100 '
+sum(x) {
+  if(x < 1) return 0;
+  return 1 + sum(x - 1);
+}
+main() {
+  a = sum(100);
+  return a;
+}
+'
+assert 1 '
+sum(x) {
+  if(x < 1) return 0;
+  return x + sum(x - 1);
+}
+main() {
+  res = sum(100);
+  cmp = 5050;
+  if(res == cmp) return 1;
+  else return 0;
+}
+'
+
+assert 120 '
+fact(x) {
+  if(x < 2) return 1;
+  return x * fact(x - 1);
+}
+main() {
+    return fact(5);
+}
+'
+assert 1 '
+fib(n) {
+  if(n < 2) return n;
+  return fib(n - 1) + fib(n - 2);
+}
+main() {
+  res = fib(20);
+  cmp = 6765;
+  return res == cmp;
+}
+'
+
 
 echo OK

@@ -88,16 +88,18 @@ fn parse_fun<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast, ParseError>
 where
     Tokens: Iterator<Item = Token>,
 {
+    use TokenKind::*;
     let tok = tokens.next().unwrap();
     let (funname, mut loc) = match tok.value.clone() {
-        TokenKind::Ident(name) => (name.to_owned(), tok.loc.clone()),
+        Ident(name) => (name.to_owned(), tok.loc.clone()),
         _ => return Err(ParseError::UnexpectedToken(tok)),
     };
-    expect_token!(tokens, TokenKind::Lparen);
-    expect_paren_close!(tokens);
-    expect_token!(tokens, TokenKind::BlockOpen);
-    let mut stmts = vec![];
     let mut vars = vec![];
+    expect_token!(tokens, Lparen);
+    let args = parse_vectors!(tokens, &mut vars, Rparen, Comma, parse_expr);
+    //expect_paren_close!(tokens);
+    expect_token!(tokens, BlockOpen);
+    let mut stmts = vec![];
     loop {
         let tok = tokens.peek().ok_or(ParseError::Eof)?;
         if let TokenKind::BlockClose = tok.value {
@@ -107,7 +109,7 @@ where
         stmts.push(parse_stmt(tokens, &mut vars)?);
     }
     tokens.next();
-    Ok(Ast::dec_fun(funname, vec![], stmts, loc))
+    Ok(Ast::dec_fun(funname, args, stmts, loc))
 }
 
 fn parse_stmt<Tokens>(
