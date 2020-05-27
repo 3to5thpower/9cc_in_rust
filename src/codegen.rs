@@ -1,7 +1,9 @@
 use crate::ast::{Ast, AstKind, BinOpKind, UniOpKind};
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering::SeqCst;
 
-static mut LABEL: usize = 0;
 static REGS: [&str; 6] = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
+static LABEL: AtomicUsize = AtomicUsize::new(0);
 
 fn gen(ast: &Ast) {
     use AstKind::*;
@@ -46,60 +48,61 @@ fn gen(ast: &Ast) {
             gen(&cond);
             println!("  pop rax");
             println!("  cmp rax, 0");
-            unsafe {
-                match els {
-                    None => {
-                        println!("  je .Lend{}", LABEL);
-                        gen(&expr);
-                        println!(".Lend{}:", LABEL);
-                    }
-                    Some(ast) => {
-                        println!("  je .Lelse{}", LABEL);
-                        gen(&expr);
-                        println!("  jmp .Lend{}", LABEL);
-                        println!(".Lelse{}:", LABEL);
-                        gen(&ast);
-                        println!(".Lend{}:", LABEL);
-                    }
+            let label = LABEL.load(SeqCst);
+            match els {
+                None => {
+                    println!("  je .Lend{}", label);
+                    gen(&expr);
+                    println!(".Lend{}:", label);
                 }
-                LABEL += 1;
+                Some(ast) => {
+                    println!("  je .Lelse{}", label);
+                    gen(&expr);
+                    println!("  jmp .Lend{}", label);
+                    println!(".Lelse{}:", label);
+                    gen(&ast);
+                    println!(".Lend{}:", label);
+                }
             }
+            LABEL.fetch_add(1, SeqCst);
         }
-        While { cond, stmt } => unsafe {
-            println!(".Lbegin{}:", LABEL);
+        While { cond, stmt } => {
+            let label = LABEL.load(SeqCst);
+            println!(".Lbegin{}:", label);
             gen(&cond);
             println!("  pop rax");
             println!("  cmp rax, 0");
-            println!("  je .Lend{}", LABEL);
+            println!("  je .Lend{}", label);
             gen(&stmt);
-            println!("  jmp .Lbegin{}", LABEL);
-            println!(".Lend{}:", LABEL);
-            LABEL += 1;
-        },
+            println!("  jmp .Lbegin{}", label);
+            println!(".Lend{}:", label);
+            LABEL.fetch_add(1, SeqCst);
+        }
         For {
             declare,
             cond,
             update,
             stmt,
-        } => unsafe {
+        } => {
             if let Some(ast) = declare {
                 gen(&ast);
             }
-            println!(".Lbegin{}:", LABEL);
+            let label = LABEL.load(SeqCst);
+            println!(".Lbegin{}:", label);
             if let Some(ast) = cond {
                 gen(&ast);
             }
             println!("  pop rax");
             println!("  cmp rax, 0");
-            println!("  je .Lend{}", LABEL);
+            println!("  je .Lend{}", label);
             gen(&stmt);
             if let Some(ast) = update {
                 gen(&ast);
             }
-            println!("  jmp .Lbegin{}", LABEL);
-            println!(".Lend{}:", LABEL);
-            LABEL += 1;
-        },
+            println!("  jmp .Lbegin{}", label);
+            println!(".Lend{}:", label);
+            LABEL.fetch_add(1, SeqCst);
+        }
         Return(exp) => {
             gen(&exp);
             println!("  pop rax");
