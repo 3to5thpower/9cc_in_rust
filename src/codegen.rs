@@ -10,13 +10,12 @@ fn gen(ast: &Ast) {
     use BinOpKind::*;
     use UniOpKind::*;
     match ast.value.clone() {
-        #[allow(unused_variables)]
         FunDeclare { name, args, body } => {
             println!("{}:", name);
             println!("  push rbp");
             println!("  mov rbp, rsp");
             println!("  sub rsp, {}", cnt_var(&ast) + 8);
-            for (i, ast) in args.iter().enumerate() {
+            for i in 0..args.len() {
                 println!("  mov rax, rbp");
                 println!("  sub rax, {}", 8 * (i + 1));
                 println!("  mov [rax], {}", REGS[i]);
