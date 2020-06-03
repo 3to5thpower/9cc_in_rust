@@ -362,20 +362,22 @@ fn parse_expr1<Tokens>(
 where
     Tokens: Iterator<Item = Token>,
 {
+    use TokenKind::*;
     match tokens.peek().map(|tok| tok.value.clone()) {
-        Some(TokenKind::Plus) | Some(TokenKind::Minus) => {
-            let op = match tokens.next() {
+        Some(Plus) | Some(Minus) | Some(Asterisk) | Some(Ampersand) => {
+            let (op, e) = match tokens.next() {
+                Some(Token { value: Plus, loc }) => (UniOp::plus(loc), parse_atom(tokens, vars)?),
+                Some(Token { value: Minus, loc }) => (UniOp::minus(loc), parse_atom(tokens, vars)?),
                 Some(Token {
-                    value: TokenKind::Plus,
+                    value: Asterisk,
                     loc,
-                }) => UniOp::plus(loc),
+                }) => (UniOp::dereference(loc), parse_expr1(tokens, vars)?),
                 Some(Token {
-                    value: TokenKind::Minus,
+                    value: Ampersand,
                     loc,
-                }) => UniOp::minus(loc),
+                }) => (UniOp::reference(loc), parse_expr1(tokens, vars)?),
                 _ => unreachable!(),
             };
-            let e = parse_atom(tokens, vars)?;
             let loc = e.loc.merge(&op.loc);
             Ok(Ast::uniop(op, e, loc))
         }

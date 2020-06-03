@@ -142,6 +142,8 @@ impl Ast {
 pub enum UniOpKind {
     Plus,
     Minus,
+    Reference,
+    Dereference,
 }
 pub type UniOp = Annot<UniOpKind>;
 impl UniOp {
@@ -150,6 +152,12 @@ impl UniOp {
     }
     pub fn minus(loc: Loc) -> Self {
         Self::new(UniOpKind::Minus, loc)
+    }
+    pub fn reference(loc: Loc) -> Self {
+        Self::new(UniOpKind::Reference, loc)
+    }
+    pub fn dereference(loc: Loc) -> Self {
+        Self::new(UniOpKind::Dereference, loc)
     }
 }
 

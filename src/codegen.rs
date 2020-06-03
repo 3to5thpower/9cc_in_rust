@@ -110,7 +110,7 @@ fn gen(ast: &Ast) {
             println!("  ret");
         }
         Assign { l, r } => {
-            gen_val(&l);
+            gen_addr(&l);
             gen(&r);
             println!("  pop rdi");
             println!("  pop rax");
@@ -119,7 +119,7 @@ fn gen(ast: &Ast) {
         }
         Stmt(ast) => gen(&ast),
         Variable(_) => {
-            gen_val(&ast);
+            gen_addr(&ast);
             println!("  pop rax");
             println!("  mov rax, [rax]");
             println!("  push rax");
@@ -181,10 +181,19 @@ fn gen(ast: &Ast) {
                 println!("  sub rax, rdi");
                 println!("  push rax");
             }
+            Reference => {
+                gen_addr(&e);
+            }
+            Dereference => {
+                gen(&e);
+                println!("  pop rax");
+                println!("  mov rax, [rax]");
+                println!("  push rax");
+            }
         },
     }
 }
-fn gen_val(ast: &Ast) {
+fn gen_addr(ast: &Ast) {
     match ast.value {
         AstKind::Variable(offset) => {
             println!("  mov rax, rbp");

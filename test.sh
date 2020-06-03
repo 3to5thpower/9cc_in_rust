@@ -141,6 +141,7 @@ main() {
   return res == cmp;
 }
 '
+assert 3 'main(){x=3;y=5;z=&y+8;return *z;}'
 
 
 echo OK

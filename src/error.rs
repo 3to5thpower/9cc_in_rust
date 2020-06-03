@@ -105,6 +105,7 @@ impl fmt::Display for TokenKind {
             BlockOpen => write!(f, "{{"),
             BlockClose => write!(f, "}}"),
             Comma => write!(f, ","),
+            Ampersand => write!(f, "&"),
         }
     }
 }
