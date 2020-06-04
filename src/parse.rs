@@ -1,4 +1,4 @@
-use crate::ast::{Ast, AstKind, BinOp, UniOp};
+use crate::ast::{Ast, AstKind, BinOp, UniOp, TYPES};
 use crate::error::{Error, ParseError};
 use crate::lex::{Token, TokenKind};
 use std::iter::Peekable;
@@ -90,14 +90,18 @@ where
 {
     use TokenKind::*;
     let tok = tokens.next().unwrap();
-    let (funname, mut loc) = match tok.value.clone() {
+    match tok.value.clone() {
+        Ident(s) if s == "int".to_owned() => (),
+        _ => return Err(ParseError::UnexpectedToken(tok)),
+    };
+    //tokens.next();
+    let (funname, mut loc) = match tokens.next().ok_or(ParseError::Eof)?.value.clone() {
         Ident(name) => (name.to_owned(), tok.loc.clone()),
         _ => return Err(ParseError::UnexpectedToken(tok)),
     };
     let mut vars = vec![];
     expect_token!(tokens, Lparen);
-    let args = parse_vectors!(tokens, &mut vars, Rparen, Comma, parse_expr);
-    //expect_paren_close!(tokens);
+    let args = parse_vectors!(tokens, &mut vars, Rparen, Comma, parse_ident);
     expect_token!(tokens, BlockOpen);
     let mut stmts = vec![];
     loop {
@@ -173,7 +177,37 @@ where
             loc = loc.merge(&stmt.loc);
             Ok(Ast::make_for(declare, cond, update, stmt, loc))
         }
-        TokenKind::BlockOpen => {
+        Ident(s) if TYPES.binary_search(&(&s[..])).is_ok() => {
+            let tok = tokens.next().unwrap();
+            let loc = tok.loc;
+            let id_tok = tokens.next().ok_or(ParseError::Eof)?;
+            let name = match id_tok.value {
+                Ident(name) => Ok(name),
+                _ => Err(ParseError::UnexpectedToken(id_tok.clone())),
+            }?;
+            loc.merge(&id_tok.loc);
+            let offset = vars
+                .iter()
+                .max_by_key(|(_, offset)| offset)
+                .map_or(8, |(_, offset)| offset + 8);
+            vars.push((name, offset));
+            let var = Ast::variable(offset, loc.clone());
+
+            let res = match tokens.peek().ok_or(ParseError::Eof)?.value {
+                Semicolon | Rparen | BlockClose | Comma => {
+                    Ok(Ast::assign(var, Ast::num(0, loc.clone()), loc))
+                }
+                Equal => {
+                    tokens.next();
+                    let e = parse_expr(tokens, vars)?;
+                    Ok(Ast::assign(var, e, loc))
+                }
+                _ => return Err(ParseError::NotExpression(tokens.peek().unwrap().clone())),
+            };
+            expect_semicolon!(tokens);
+            res
+        }
+        BlockOpen => {
             let tok = tokens.next().unwrap();
             let mut loc = tok.loc;
             let v = parse_vectors!(tokens, vars, BlockClose, Semicolon, parse_stmt);
@@ -408,16 +442,11 @@ where
             }
             _ => {
                 let max = vars.iter().find(|&(name, _)| s == *name);
+                let t = Token::new(Ident(s), tok.loc.clone());
+                //println!("{:?}", vars);
                 match max {
                     Some(_) => Ok(Ast::variable(max.unwrap().1, tok.loc)),
-                    _ => {
-                        let offset = vars
-                            .iter()
-                            .max_by_key(|(_, offset)| offset)
-                            .map_or(8, |(_, offset)| offset + 8);
-                        vars.push((s, offset));
-                        Ok(Ast::variable(offset, tok.loc))
-                    }
+                    _ => Err(ParseError::NotDefinedExp(t)),
                 }
             }
         },
@@ -427,5 +456,34 @@ where
             Ok(e)
         }
         _ => Err(ParseError::NotExpression(tok)),
+    }
+}
+
+fn parse_ident<Tokens>(
+    tokens: &mut Peekable<Tokens>,
+    vars: &mut Vec<(String, usize)>,
+) -> Result<Ast, ParseError>
+where
+    Tokens: Iterator<Item = Token>,
+{
+    use TokenKind::*;
+    match tokens.peek().ok_or(ParseError::Eof)?.value.clone() {
+        Ident(s) if TYPES.binary_search(&(&s[..])).is_ok() => {
+            let tok = tokens.next().unwrap();
+            let loc = tok.loc;
+            let id_tok = tokens.next().ok_or(ParseError::Eof)?;
+            let name = match id_tok.value {
+                Ident(name) => Ok(name),
+                _ => Err(ParseError::UnexpectedToken(id_tok.clone())),
+            }?;
+            loc.merge(&id_tok.loc);
+            let offset = vars
+                .iter()
+                .max_by_key(|(_, offset)| offset)
+                .map_or(8, |(_, offset)| offset + 8);
+            vars.push((name, offset));
+            Ok(Ast::variable(offset, loc.clone()))
+        }
+        _ => Err(ParseError::UnexpectedToken(tokens.peek().unwrap().clone())),
     }
 }

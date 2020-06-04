@@ -1,5 +1,7 @@
 use crate::lex::{Annot, Loc};
 
+pub static TYPES: [&str; 1] = ["int"];
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AstKind {
     Num(u64),

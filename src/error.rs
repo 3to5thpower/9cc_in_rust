@@ -12,6 +12,7 @@ pub enum ParseError {
     Eof,
     NotSemicolon(Token),
     NotAddressExp(Token),
+    NotDefinedExp(Token),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -62,6 +63,7 @@ impl Error {
                     | P::NotExpression(Token { loc, .. })
                     | P::NotSemicolon(Token { loc, .. })
                     | P::NotOperator(Token { loc, .. })
+                    | P::NotDefinedExp(Token { loc, .. })
                     | P::UnClosedOpenParen(Token { loc, .. }) => loc.clone(),
                     P::RebundantExpression(Token { loc, .. }) => Loc(loc.0, input.len() + 1),
                     P::Eof => Loc(input.len(), input.len() + 1),
@@ -138,6 +140,7 @@ impl fmt::Display for ParseError {
             UnClosedOpenParen(tok) => write!(f, "{}: '{}' is not closed", tok.loc, tok.value),
             NotSemicolon(tok) => write!(f, "{}: not ';' before tokens '{}'", tok.loc, tok.value),
             NotAddressExp(tok) => write!(f, "{}: cannot assign value in '{}'", tok.loc, tok.value),
+            NotDefinedExp(tok) => write!(f, "{}: '{}' is not defined variable", tok.loc, tok.value),
             RebundantExpression(tok) => write!(
                 f,
                 "{}: expression after '{}' is rebundant",
