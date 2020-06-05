@@ -1,6 +1,12 @@
 use crate::lex::{Annot, Loc};
 
-pub static TYPES: [&str; 1] = ["int"];
+pub static TYPES: [(&str, Types); 1] = [("int", Types::Int)];
+
+#[derive(Debug, Clone)]
+pub enum Types {
+    Int,
+    Ptr(Box<Types>),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AstKind {

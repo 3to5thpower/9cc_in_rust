@@ -1,4 +1,4 @@
-use crate::ast::{Ast, AstKind, BinOp, UniOp, TYPES};
+use crate::ast::{Ast, AstKind, BinOp, Types, UniOp, TYPES};
 use crate::error::ParseError::*;
 use crate::lex::{Token, TokenKind::*};
 use std::iter::Peekable;
@@ -40,6 +40,28 @@ macro_rules! parse_or {
             _ => Some($parser($tokens, $vars)?),
         }
     }};
+}
+
+fn parse_type<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Types>
+where
+    Tokens: Iterator<Item = Token>,
+{
+    let typename = match tokens.peek().ok_or(Eof)?.value.clone() {
+        Ident(s) => s,
+        _ => bail!(UnexpectedToken(tokens.peek().unwrap().clone())),
+    };
+    let key = TYPES.binary_search_by_key(&(&typename[..]), |(s, _)| s);
+    if let Ok(n) = key {
+        tokens.next();
+        let mut res = TYPES[n].1.clone();
+        while tokens.peek().ok_or(Eof)?.value == Asterisk {
+            tokens.next();
+            res = Types::Ptr(Box::new(res));
+        }
+        Ok(res)
+    } else {
+        bail!(UnexpectedToken(tokens.peek().unwrap().clone()))
+    }
 }
 
 pub fn parse(input: &str) -> Result<Vec<Ast>> {
@@ -153,21 +175,9 @@ where
             loc = loc.merge(&stmt.loc);
             Ok(Ast::make_for(declare, cond, update, stmt, loc))
         }
-        Ident(s) if TYPES.binary_search(&(&s[..])).is_ok() => {
-            let tok = tokens.next().unwrap();
-            let loc = tok.loc;
-            let id_tok = tokens.next().ok_or(anyhow!(Eof))?;
-            let name = match id_tok.value {
-                Ident(name) => Ok(name),
-                _ => Err(UnexpectedToken(id_tok.clone())),
-            }?;
-            loc.merge(&id_tok.loc);
-            let offset = vars
-                .iter()
-                .max_by_key(|(_, offset)| offset)
-                .map_or(8, |(_, offset)| offset + 8);
-            vars.push((name, offset));
-            let var = Ast::variable(offset, loc.clone());
+        Ident(s) if TYPES.binary_search_by_key(&(&s[..]), |(s, _)| s).is_ok() => {
+            let loc = tokens.peek().unwrap().loc.clone();
+            let var = parse_ident(tokens, vars)?;
 
             let res = match tokens.peek().ok_or(Eof)?.value {
                 Semicolon | Rparen | BlockClose | Comma => {
@@ -420,24 +430,22 @@ fn parse_ident<Tokens>(
 where
     Tokens: Iterator<Item = Token>,
 {
-    if matches!(tokens.peek().ok_or(Eof)?.value.clone(),
-        Ident(s) if TYPES.binary_search(&(&s[..])).is_ok())
-    {
-        let tok = tokens.next().unwrap();
-        let loc = tok.loc;
-        let id_tok = tokens.next().ok_or(Eof)?;
-        let name = match id_tok.value {
-            Ident(name) => Ok(name),
-            _ => Err(UnexpectedToken(id_tok.clone())),
-        }?;
-        loc.merge(&id_tok.loc);
-        let offset = vars
-            .iter()
-            .max_by_key(|(_, offset)| offset)
-            .map_or(8, |(_, offset)| offset + 8);
-        vars.push((name, offset));
-        Ok(Ast::variable(offset, loc.clone()))
-    } else {
-        bail!(UnexpectedToken(tokens.peek().unwrap().clone()))
-    }
+    let loc = tokens.peek().ok_or(Eof)?.loc.clone();
+    let ty = parse_type(tokens)?;
+    let id_tok = tokens.next().ok_or(Eof)?;
+    let size = match ty {
+        Types::Int => 8,
+        Types::Ptr(_) => 8,
+    };
+    let name = match id_tok.value {
+        Ident(name) => Ok(name),
+        _ => Err(UnexpectedToken(id_tok.clone())),
+    }?;
+    loc.merge(&id_tok.loc);
+    let offset = vars
+        .iter()
+        .max_by_key(|(_, offset)| offset)
+        .map_or(size, |(_, offset)| offset + size);
+    vars.push((name, offset));
+    Ok(Ast::variable(offset, loc.clone()))
 }
