@@ -1,3 +1,5 @@
+use crate::error::LexError;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Loc(pub usize, pub usize);
 impl Loc {
@@ -44,12 +46,6 @@ pub enum TokenKind {
     BlockClose,
     Comma,
     Ampersand,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum LexErrorKind {
-    InvalidChar(char),
-    Eof,
 }
 
 pub type Token = Annot<TokenKind>;
@@ -119,16 +115,6 @@ impl Token {
     }
 }
 
-pub type LexError = Annot<LexErrorKind>;
-impl LexError {
-    fn invalid_char(c: char, loc: Loc) -> Self {
-        Self::new(LexErrorKind::InvalidChar(c), loc)
-    }
-    fn eof(loc: Loc) -> Self {
-        Self::new(LexErrorKind::Eof, loc)
-    }
-}
-
 pub fn lex(input: &str) -> Result<Vec<Token>, LexError> {
     let mut res = vec![];
     let input = input.as_bytes();
@@ -187,7 +173,12 @@ pub fn lex(input: &str) -> Result<Vec<Token>, LexError> {
             b'0'..=b'9' => lex_a_token!(lex_number(input, pos)),
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => lex_a_token!(lex_ident(input, pos)),
             b' ' | b'\n' | b'\t' => pos += 1,
-            b => return Err(LexError::invalid_char(b as char, Loc(pos, pos + 1))),
+            b => {
+                return Err(LexError::InvalidChar {
+                    c: b as char,
+                    loc: Loc(pos, pos + 1),
+                })
+            }
         }
     }
     Ok(res)
@@ -195,13 +186,13 @@ pub fn lex(input: &str) -> Result<Vec<Token>, LexError> {
 
 fn consume_byte(input: &[u8], pos: usize, b: u8) -> Result<(u8, usize), LexError> {
     if input.len() <= pos {
-        return Err(LexError::eof(Loc(pos, pos)));
+        return Err(LexError::Eof(Loc(pos, pos)));
     }
     if input[pos] != b {
-        return Err(LexError::invalid_char(
-            input[pos] as char,
-            Loc(pos, pos + 1),
-        ));
+        return Err(LexError::InvalidChar {
+            c: input[pos] as char,
+            loc: Loc(pos, pos + 1),
+        });
     }
     Ok((b, pos + 1))
 }
