@@ -1,34 +1,15 @@
 use crate::ast::{Ast, AstKind, BinOp, UniOp, TYPES};
 use crate::error::ParseError::*;
-use crate::lex::{Token, TokenKind};
+use crate::lex::{Token, TokenKind::*};
 use std::iter::Peekable;
 
 use anyhow::{anyhow, bail, Result};
 
 macro_rules! expect_token {
-    ($tokens: expr, $token: pat) => {{
+    ($tokens: expr, $token: pat, $err: ident) => {{
         let tok = $tokens.next().ok_or(Eof)?;
-        match tok.value.clone() {
-            $token => (),
-            _ => bail!(UnexpectedToken(tok.clone())),
-        }
-    }};
-}
-macro_rules! expect_semicolon {
-    ($tokens: expr) => {{
-        let tok = $tokens.next().ok_or(Eof)?;
-        match tok.value.clone() {
-            TokenKind::Semicolon => (),
-            _ => bail!(NotSemicolon(tok.clone())),
-        }
-    }};
-}
-macro_rules! expect_paren_close {
-    ($tokens: expr) => {{
-        let tok = $tokens.next().ok_or(Eof)?;
-        match tok.value {
-            TokenKind::Rparen => (),
-            _ => bail!(UnClosedOpenParen(tok)),
+        if !matches!(tok.value.clone(), $token) {
+            bail!($err(tok.clone()))
         }
     }};
 }
@@ -70,7 +51,7 @@ pub fn parse(input: &str) -> Result<Vec<Ast>> {
         Ok(parse_program(&mut tokens)?)
     }
 
-    Ok(parse_body(tokens).map_err(|e| anyhow!(e))?)
+    Ok(parse_body(tokens)?)
 }
 
 fn parse_program<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Vec<Ast>>
@@ -90,7 +71,6 @@ fn parse_fun<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast>
 where
     Tokens: Iterator<Item = Token>,
 {
-    use TokenKind::*;
     let tok = tokens.next().unwrap();
     if !matches!(tok.value.clone(), Ident(s) if s == "int".to_owned()) {
         bail!(UnexpectedToken(tok));
@@ -100,13 +80,13 @@ where
         _ => bail!(UnexpectedToken(tok)),
     };
     let mut vars = vec![];
-    expect_token!(tokens, Lparen);
+    expect_token!(tokens, Lparen, UnexpectedToken);
     let args = parse_vectors!(tokens, &mut vars, Rparen, Comma, parse_ident);
-    expect_token!(tokens, BlockOpen);
+    expect_token!(tokens, BlockOpen, UnexpectedToken);
     let mut stmts = vec![];
     loop {
         let tok = tokens.peek().ok_or(Eof)?;
-        if let TokenKind::BlockClose = tok.value {
+        if let BlockClose = tok.value {
             break;
         }
         loc = loc.merge(&tok.loc);
@@ -120,20 +100,19 @@ fn parse_stmt<Tokens>(tokens: &mut Peekable<Tokens>, vars: &mut Vec<(String, usi
 where
     Tokens: Iterator<Item = Token>,
 {
-    use TokenKind::*;
     match tokens.peek().ok_or(Eof)?.value.clone() {
         Return => {
             let tok = tokens.next().unwrap();
             let exp = parse_expr(tokens, vars)?;
             let loc = tok.loc.merge(&exp.loc);
-            expect_semicolon!(tokens);
+            expect_token!(tokens, Semicolon, NotSemicolon);
             Ok(Ast::make_return(exp, loc))
         }
         Ident(s) if s == "if".to_owned() => {
             let tok = tokens.next().unwrap();
-            expect_token!(tokens, Lparen);
+            expect_token!(tokens, Lparen, UnexpectedToken);
             let cond = parse_expr(tokens, vars)?;
-            expect_paren_close!(tokens);
+            expect_token!(tokens, Rparen, UnClosedOpenParen);
             let stmt = parse_stmt(tokens, vars)?;
 
             if tokens.peek().is_none() {
@@ -153,9 +132,9 @@ where
         }
         Ident(s) if s == "while".to_owned() => {
             let tok = tokens.next().unwrap();
-            expect_token!(tokens, Lparen);
+            expect_token!(tokens, Lparen, UnexpectedToken);
             let cond = parse_expr(tokens, vars)?;
-            expect_paren_close!(tokens);
+            expect_token!(tokens, Rparen, UnClosedOpenParen);
             let stmt = parse_stmt(tokens, vars)?;
             let loc = tok.loc.merge(&stmt.loc);
             Ok(Ast::make_while(cond, stmt, loc))
@@ -163,13 +142,13 @@ where
         Ident(s) if s == "for".to_owned() => {
             let tok = tokens.next().unwrap();
             let mut loc = tok.loc;
-            expect_token!(tokens, Lparen);
+            expect_token!(tokens, Lparen, UnexpectedToken);
             let declare = parse_or!(tokens, vars, Semicolon, parse_expr);
-            expect_semicolon!(tokens);
+            expect_token!(tokens, Semicolon, NotSemicolon);
             let cond = parse_or!(tokens, vars, Semicolon, parse_expr);
-            expect_semicolon!(tokens);
+            expect_token!(tokens, Semicolon, NotSemicolon);
             let update = parse_or!(tokens, vars, Rparen, parse_expr);
-            expect_paren_close!(tokens);
+            expect_token!(tokens, Rparen, UnClosedOpenParen);
             let stmt = parse_stmt(tokens, vars)?;
             loc = loc.merge(&stmt.loc);
             Ok(Ast::make_for(declare, cond, update, stmt, loc))
@@ -201,7 +180,7 @@ where
                 }
                 _ => bail!(NotExpression(tokens.peek().unwrap().clone())),
             };
-            expect_semicolon!(tokens);
+            expect_token!(tokens, Semicolon, NotSemicolon);
             res
         }
         BlockOpen => {
@@ -215,7 +194,7 @@ where
         }
         _ => {
             let exp = parse_expr(tokens, vars)?;
-            expect_semicolon!(tokens);
+            expect_token!(tokens, Semicolon, NotSemicolon);
             Ok(exp)
         }
     }
@@ -264,7 +243,6 @@ where
     let loc = equal_tok.loc.clone();
     let equality = parse_equality(tokens, vars)?;
     let tok = tokens.peek().ok_or(Eof)?;
-    use TokenKind::*;
     match tok.value {
         Semicolon | Rparen | BlockClose | Comma => Ok(Ast::stmt(equality, loc)),
         Equal => {
@@ -293,8 +271,8 @@ where
         Tokens: Iterator<Item = Token>,
     {
         let op = tokens.peek().ok_or(Eof).and_then(|tok| match tok.value {
-            TokenKind::DoubleEqual => Ok(BinOp::equal(tok.loc.clone())),
-            TokenKind::NotEqual => Ok(BinOp::not_equal(tok.loc.clone())),
+            DoubleEqual => Ok(BinOp::equal(tok.loc.clone())),
+            NotEqual => Ok(BinOp::not_equal(tok.loc.clone())),
             _ => Err(NotOperator(tok.clone())),
         })?;
         tokens.next();
@@ -315,10 +293,10 @@ where
         Tokens: Iterator<Item = Token>,
     {
         let op = tokens.peek().ok_or(Eof).and_then(|tok| match tok.value {
-            TokenKind::Less => Ok(BinOp::less(tok.loc.clone())),
-            TokenKind::LessEqual => Ok(BinOp::less_equal(tok.loc.clone())),
-            TokenKind::Greater => Ok(BinOp::greater(tok.loc.clone())),
-            TokenKind::GreaterEqual => Ok(BinOp::greater_equal(tok.loc.clone())),
+            Less => Ok(BinOp::less(tok.loc.clone())),
+            LessEqual => Ok(BinOp::less_equal(tok.loc.clone())),
+            Greater => Ok(BinOp::greater(tok.loc.clone())),
+            GreaterEqual => Ok(BinOp::greater_equal(tok.loc.clone())),
             _ => Err(NotOperator(tok.clone())),
         })?;
         tokens.next();
@@ -339,8 +317,8 @@ where
         Tokens: Iterator<Item = Token>,
     {
         let op = tokens.peek().ok_or(Eof).and_then(|tok| match tok.value {
-            TokenKind::Plus => Ok(BinOp::add(tok.loc.clone())),
-            TokenKind::Minus => Ok(BinOp::sub(tok.loc.clone())),
+            Plus => Ok(BinOp::add(tok.loc.clone())),
+            Minus => Ok(BinOp::sub(tok.loc.clone())),
             _ => Err(NotOperator(tok.clone())),
         })?;
         tokens.next();
@@ -361,8 +339,8 @@ where
         Tokens: Iterator<Item = Token>,
     {
         let op = tokens.peek().ok_or(Eof).and_then(|tok| match tok.value {
-            TokenKind::Asterisk => Ok(BinOp::mult(tok.loc.clone())),
-            TokenKind::Slash => Ok(BinOp::div(tok.loc.clone())),
+            Asterisk => Ok(BinOp::mult(tok.loc.clone())),
+            Slash => Ok(BinOp::div(tok.loc.clone())),
             _ => Err(NotOperator(tok.clone())),
         })?;
         tokens.next();
@@ -378,7 +356,6 @@ fn parse_expr1<Tokens>(
 where
     Tokens: Iterator<Item = Token>,
 {
-    use TokenKind::*;
     match tokens.peek().map(|tok| tok.value.clone()) {
         Some(Plus) | Some(Minus) | Some(Asterisk) | Some(Ampersand) => {
             let (op, e) = match tokens.next() {
@@ -405,7 +382,6 @@ fn parse_atom<Tokens>(tokens: &mut Peekable<Tokens>, vars: &mut Vec<(String, usi
 where
     Tokens: Iterator<Item = Token>,
 {
-    use TokenKind::*;
     let tok = tokens.next().ok_or(Eof)?;
     match tok.value {
         Num(n) => Ok(Ast::num(n, tok.loc)),
@@ -429,7 +405,7 @@ where
         }
         Lparen => {
             let e = parse_expr(tokens, vars)?;
-            expect_paren_close!(tokens);
+            expect_token!(tokens, Rparen, UnClosedOpenParen);
             Ok(e)
         }
         _ => bail!(NotExpression(tok)),
@@ -443,7 +419,6 @@ fn parse_ident<Tokens>(
 where
     Tokens: Iterator<Item = Token>,
 {
-    use TokenKind::*;
     if matches!(tokens.peek().ok_or(Eof)?.value.clone(),
         Ident(s) if TYPES.binary_search(&(&s[..])).is_ok())
     {

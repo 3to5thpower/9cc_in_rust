@@ -24,7 +24,7 @@ fn main() -> Result<()> {
         }
         anyhow!(e)
     })?;
-    codegen::codegen(&ast);
-    //println!("{:?}", ast);
+    let res = codegen::codegen(&ast);
+    println!("{}", res);
     Ok(())
 }

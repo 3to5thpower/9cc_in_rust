@@ -5,76 +5,76 @@ use std::sync::atomic::Ordering::SeqCst;
 static REGS: [&str; 6] = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
 static LABEL: AtomicUsize = AtomicUsize::new(0);
 
-fn gen(ast: &Ast) {
+fn gen(out: &mut String, ast: &Ast) {
     use AstKind::*;
     use BinOpKind::*;
     use UniOpKind::*;
     match ast.value.clone() {
         FunDeclare { name, args, body } => {
-            println!("{}:", name);
-            println!("  push rbp");
-            println!("  mov rbp, rsp");
-            println!("  sub rsp, {}", cnt_var(&ast) + 8);
+            out.push_str(&format!("{}:\n", name));
+            out.push_str("  push rbp\n");
+            out.push_str("  mov rbp, rsp\n");
+            out.push_str(&format!("  sub rsp, {}\n", cnt_var(&ast) + 8));
             for i in 0..args.len() {
-                println!("  mov rax, rbp");
-                println!("  sub rax, {}", 8 * (i + 1));
-                println!("  mov [rax], {}", REGS[i]);
+                out.push_str("  mov rax, rbp\n");
+                out.push_str(&format!("  sub rax, {}\n", 8 * (i + 1)));
+                out.push_str(&format!("  mov [rax], {}\n", REGS[i]));
             }
             for ast in body {
-                gen(&ast);
-                println!("  pop rax");
+                gen(out, &ast);
+                out.push_str("  pop rax\n");
             }
-            println!("  mov rsp, rbp");
-            println!("  pop rbp");
-            println!("  ret");
+            out.push_str("  mov rsp, rbp\n");
+            out.push_str("  pop rbp\n");
+            out.push_str("  ret\n");
         }
         Fun { name, args } => {
             for (i, ast) in args.iter().enumerate() {
-                gen(&ast);
-                println!("  pop rax");
-                println!("  mov {}, rax", REGS[i]);
+                gen(out, &ast);
+                out.push_str("  pop rax\n");
+                out.push_str(&format!("  mov {}, rax\n", REGS[i]));
             }
-            println!("  call {}", name);
-            println!("  push rax");
+            out.push_str(&format!("  call {}\n", name));
+            out.push_str("  push rax\n");
         }
         Block(vec) => {
             for ast in vec {
-                gen(&ast);
-                println!("  pop rax");
+                gen(out, &ast);
+                out.push_str("  pop rax\n");
             }
         }
         If { cond, expr, els } => {
-            gen(&cond);
-            println!("  pop rax");
-            println!("  cmp rax, 0");
+            gen(out, &cond);
+            out.push_str("  pop rax\n");
+            out.push_str("  cmp rax, 0\n");
             let label = LABEL.load(SeqCst);
             match els {
                 None => {
-                    println!("  je .Lend{}", label);
-                    gen(&expr);
-                    println!(".Lend{}:", label);
+                    out.push_str(&format!("  je .Lend{}\n", label));
+                    gen(out, &expr);
+                    out.push_str(&format!(".Lend{}:\n", label));
                 }
                 Some(ast) => {
-                    println!("  je .Lelse{}", label);
-                    gen(&expr);
-                    println!("  jmp .Lend{}", label);
-                    println!(".Lelse{}:", label);
-                    gen(&ast);
-                    println!(".Lend{}:", label);
+                    out.push_str(&format!("  je .Lelse{}\n", label));
+                    gen(out, &expr);
+                    out.push_str(&format!("  jmp .Lend{}\n", label));
+                    out.push_str(&format!(".Lelse{}:\n", label));
+                    gen(out, &ast);
+                    out.push_str(&format!(".Lend{}:\n", label));
                 }
             }
             LABEL.fetch_add(1, SeqCst);
         }
         While { cond, stmt } => {
             let label = LABEL.load(SeqCst);
-            println!(".Lbegin{}:", label);
-            gen(&cond);
-            println!("  pop rax");
-            println!("  cmp rax, 0");
-            println!("  je .Lend{}", label);
-            gen(&stmt);
-            println!("  jmp .Lbegin{}", label);
-            println!(".Lend{}:", label);
+            out.push_str(&format!(".Lbegin{}:\n", label));
+            gen(out, &cond);
+            out.push_str("  pop rax\n");
+            out.push_str("  cmp rax, 0\n");
+            out.push_str(&format!("  je .Lend{}\n", label));
+            gen(out, &stmt);
+            out.push_str(&format!("  jmp .Lbegin{}\n", label));
+            out.push_str(&format!(".Lend{}:\n", label));
             LABEL.fetch_add(1, SeqCst);
         }
         For {
@@ -84,133 +84,135 @@ fn gen(ast: &Ast) {
             stmt,
         } => {
             if let Some(ast) = declare {
-                gen(&ast);
+                gen(out, &ast);
             }
             let label = LABEL.load(SeqCst);
-            println!(".Lbegin{}:", label);
+            out.push_str(&format!(".Lbegin{}:\n", label));
             if let Some(ast) = cond {
-                gen(&ast);
+                gen(out, &ast);
             }
-            println!("  pop rax");
-            println!("  cmp rax, 0");
-            println!("  je .Lend{}", label);
-            gen(&stmt);
+            out.push_str("  pop rax\n");
+            out.push_str("  cmp rax, 0\n");
+            out.push_str(&format!("  je .Lend{}\n", label));
+            gen(out, &stmt);
             if let Some(ast) = update {
-                gen(&ast);
+                gen(out, &ast);
             }
-            println!("  jmp .Lbegin{}", label);
-            println!(".Lend{}:", label);
+            out.push_str(&format!("  jmp .Lbegin{}\n", label));
+            out.push_str(&format!(".Lend{}:\n", label));
             LABEL.fetch_add(1, SeqCst);
         }
         Return(exp) => {
-            gen(&exp);
-            println!("  pop rax");
-            println!("  mov rsp, rbp");
-            println!("  pop rbp");
-            println!("  ret");
+            gen(out, &exp);
+            out.push_str("  pop rax\n");
+            out.push_str("  mov rsp, rbp\n");
+            out.push_str("  pop rbp\n");
+            out.push_str("  ret\n");
         }
         Assign { l, r } => {
-            gen_addr(&l);
-            gen(&r);
-            println!("  pop rdi");
-            println!("  pop rax");
-            println!("  mov [rax], rdi");
-            println!("  push rdi");
+            gen_addr(out, &l);
+            gen(out, &r);
+            out.push_str("  pop rdi\n");
+            out.push_str("  pop rax\n");
+            out.push_str("  mov [rax], rdi\n");
+            out.push_str("  push rdi\n");
         }
-        Stmt(ast) => gen(&ast),
+        Stmt(ast) => gen(out, &ast),
         Variable(_) => {
-            gen_addr(&ast);
-            println!("  pop rax");
-            println!("  mov rax, [rax]");
-            println!("  push rax");
+            gen_addr(out, &ast);
+            out.push_str("  pop rax\n");
+            out.push_str("  mov rax, [rax]\n");
+            out.push_str("  push rax\n");
         }
-        Num(n) => println!("  push {}", n),
+        Num(n) => out.push_str(&format!("  push {}\n", n)),
         BinOp { op, l, r } => {
-            gen(&l);
-            gen(&r);
-            println!("  pop rdi");
-            println!("  pop rax");
+            gen(out, &l);
+            gen(out, &r);
+            out.push_str("  pop rdi\n");
+            out.push_str("  pop rax\n");
             match op.value {
-                Add => println!("  add rax, rdi"),
-                Sub => println!("  sub rax, rdi"),
-                Mult => println!("  imul rax, rdi"),
+                Add => out.push_str("  add rax, rdi\n"),
+                Sub => out.push_str("  sub rax, rdi\n"),
+                Mult => out.push_str("  imul rax, rdi\n"),
                 Div => {
-                    println!("  cqo");
-                    println!("  idiv rdi");
+                    out.push_str("  cqo\n");
+                    out.push_str("  idiv rdi\n");
                 }
                 Less => {
-                    println!("  cmp rax, rdi");
-                    println!("  setl al");
-                    println!("  movzb rax, al");
+                    out.push_str("  cmp rax, rdi\n");
+                    out.push_str("  setl al\n");
+                    out.push_str("  movzb rax, al\n");
                 }
                 LessEqual => {
-                    println!("  cmp rax, rdi");
-                    println!("  setle al");
-                    println!("  movzb rax, al");
+                    out.push_str("  cmp rax, rdi\n");
+                    out.push_str("  setle al\n");
+                    out.push_str("  movzb rax, al\n");
                 }
                 Equal => {
-                    println!("  cmp rax, rdi");
-                    println!("  sete al");
-                    println!("  movzb rax, al");
+                    out.push_str("  cmp rax, rdi\n");
+                    out.push_str("  sete al\n");
+                    out.push_str("  movzb rax, al\n");
                 }
                 NotEqual => {
-                    println!("  cmp rax, rdi");
-                    println!("  setne al");
-                    println!("  movzb rax, al");
+                    out.push_str("  cmp rax, rdi\n");
+                    out.push_str("  setne al\n");
+                    out.push_str("  movzb rax, al\n");
                 }
                 Greater => {
-                    println!("  cmp rdi, rax");
-                    println!("  setl al");
-                    println!("  movzb rax, al");
+                    out.push_str("  cmp rdi, rax\n");
+                    out.push_str("  setl al\n");
+                    out.push_str("  movzb rax, al\n");
                 }
                 GreaterEqual => {
-                    println!("  cmp rdi, rax");
-                    println!("  setle al");
-                    println!("  movzb rax, al");
+                    out.push_str("  cmp rdi, rax\n");
+                    out.push_str("  setle al\n");
+                    out.push_str("  movzb rax, al\n");
                 }
             }
-            println!("  push rax");
+            out.push_str("  push rax\n");
         }
         UniOp { op, e } => match op.value {
-            Plus => gen(&e),
+            Plus => gen(out, &e),
             Minus => {
-                println!("  push 0");
-                gen(&e);
-                println!("  pop rdi");
-                println!("  pop rax");
-                println!("  sub rax, rdi");
-                println!("  push rax");
+                out.push_str("  push 0\n");
+                gen(out, &e);
+                out.push_str("  pop rdi\n");
+                out.push_str("  pop rax\n");
+                out.push_str("  sub rax, rdi\n");
+                out.push_str("  push rax\n");
             }
             Reference => {
-                gen_addr(&e);
+                gen_addr(out, &e);
             }
             Dereference => {
-                gen(&e);
-                println!("  pop rax");
-                println!("  mov rax, [rax]");
-                println!("  push rax");
+                gen(out, &e);
+                out.push_str("  pop rax\n");
+                out.push_str("  mov rax, [rax]\n");
+                out.push_str("  push rax\n");
             }
         },
     }
 }
-fn gen_addr(ast: &Ast) {
+fn gen_addr(out: &mut String, ast: &Ast) {
     match ast.value {
         AstKind::Variable(offset) => {
-            println!("  mov rax, rbp");
-            println!("  sub rax, {}", offset);
-            println!("  push rax");
+            out.push_str("  mov rax, rbp\n");
+            out.push_str(&format!("  sub rax, {}\n", offset));
+            out.push_str("  push rax\n");
         }
         _ => unreachable!(),
     }
 }
 
-pub fn codegen(astes: &Vec<Ast>) {
-    println!(".intel_syntax noprefix");
-    println!(".global main");
+pub fn codegen(astes: &Vec<Ast>) -> String {
+    let mut res = String::new();
+    res.push_str(".intel_syntax noprefix\n");
+    res.push_str(".global main\n");
     for ast in astes {
-        gen(ast);
-        println!("  pop rax");
+        gen(&mut res, ast);
+        res.push_str("  pop rax\n");
     }
+    res
 }
 
 fn cnt_var(ast: &Ast) -> usize {
