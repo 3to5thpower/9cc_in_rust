@@ -1,4 +1,5 @@
 use crate::ast::{Ast, AstKind, BinOpKind, UniOpKind};
+use crate::lex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::SeqCst;
 
@@ -110,7 +111,18 @@ fn gen(out: &mut String, ast: &Ast) {
             out.push_str("  ret\n");
         }
         Assign { l, r } => {
-            gen_addr(out, &l);
+            match (*l).value.clone() {
+                Variable(_) => gen_addr(out, &l),
+                UniOp {
+                    op:
+                        lex::Annot {
+                            value: UniOpKind::Dereference,
+                            ..
+                        },
+                    e,
+                } => gen(out, &e),
+                _ => unreachable!(),
+            }
             gen(out, &r);
             out.push_str("  pop rdi\n");
             out.push_str("  pop rax\n");

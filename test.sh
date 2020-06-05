@@ -149,14 +149,23 @@ assert 0 'int main(){int x = 0; {int x = 1;} return x;}'
 
 assert 5 'int main(){int x=3;int*y=&x;x=x+2;return *y;}'
 
-#assert 0 '
-#int main() {
-#    int x = 3;
-#    int refx = &x;
-#    *refx = *refx - 3;
-#    return x;
-#}
-#'
+assert 0 '
+int main() {
+  int x = 3;
+  int refx = &x;
+  *refx = *refx - 3;
+  return x;
+}
+'
 
+assert 3 '
+int main() {
+  int x;
+  int *y;
+  y = &x;
+  *y=3;
+  return x;
+}
+'
 
 echo OK

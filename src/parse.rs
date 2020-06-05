@@ -1,4 +1,4 @@
-use crate::ast::{Ast, AstKind, BinOp, Types, UniOp, TYPES};
+use crate::ast::{Ast, AstKind, BinOp, Types, UniOp, UniOpKind, TYPES};
 use crate::error::ParseError::*;
 use crate::lex::{Token, TokenKind::*};
 use std::iter::Peekable;
@@ -42,28 +42,6 @@ macro_rules! parse_or {
     }};
 }
 
-fn parse_type<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Types>
-where
-    Tokens: Iterator<Item = Token>,
-{
-    let typename = match tokens.peek().ok_or(Eof)?.value.clone() {
-        Ident(s) => s,
-        _ => bail!(UnexpectedToken(tokens.peek().unwrap().clone())),
-    };
-    let key = TYPES.binary_search_by_key(&(&typename[..]), |(s, _)| s);
-    if let Ok(n) = key {
-        tokens.next();
-        let mut res = TYPES[n].1.clone();
-        while tokens.peek().ok_or(Eof)?.value == Asterisk {
-            tokens.next();
-            res = Types::Ptr(Box::new(res));
-        }
-        Ok(res)
-    } else {
-        bail!(UnexpectedToken(tokens.peek().unwrap().clone()))
-    }
-}
-
 pub fn parse(input: &str) -> Result<Vec<Ast>> {
     use crate::lex::lex;
     let tokens = lex(input).map_err(|e| anyhow!(e))?;
@@ -93,13 +71,11 @@ fn parse_fun<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Ast>
 where
     Tokens: Iterator<Item = Token>,
 {
-    let tok = tokens.next().unwrap();
-    if !matches!(tok.value.clone(), Ident(s) if s == "int".to_owned()) {
-        bail!(UnexpectedToken(tok));
-    }
+    let loc = tokens.peek().ok_or(Eof)?.loc.clone();
+    let _ty = parse_type(tokens)?;
     let (funname, mut loc) = match tokens.next().ok_or(Eof)?.value.clone() {
-        Ident(name) => (name.to_owned(), tok.loc.clone()),
-        _ => bail!(UnexpectedToken(tok)),
+        Ident(name) => (name.to_owned(), loc),
+        _ => bail!(UnexpectedToken(tokens.peek().unwrap().clone())),
     };
     let mut vars = vec![];
     expect_token!(tokens, Lparen, UnexpectedToken);
@@ -108,13 +84,13 @@ where
     let mut stmts = vec![];
     loop {
         let tok = tokens.peek().ok_or(Eof)?;
-        if let BlockClose = tok.value {
+        if matches!(tok.value, BlockClose) {
+            tokens.next();
             break;
         }
         loc = loc.merge(&tok.loc);
         stmts.push(parse_stmt(tokens, &mut vars)?);
     }
-    tokens.next();
     Ok(Ast::dec_fun(funname, args, stmts, loc))
 }
 
@@ -124,9 +100,9 @@ where
 {
     match tokens.peek().ok_or(Eof)?.value.clone() {
         Return => {
-            let tok = tokens.next().unwrap();
+            let mut loc = tokens.next().unwrap().loc;
             let exp = parse_expr(tokens, vars)?;
-            let loc = tok.loc.merge(&exp.loc);
+            loc = loc.merge(&exp.loc);
             expect_token!(tokens, Semicolon, NotSemicolon);
             Ok(Ast::make_return(exp, loc))
         }
@@ -178,20 +154,17 @@ where
         Ident(s) if TYPES.binary_search_by_key(&(&s[..]), |(s, _)| s).is_ok() => {
             let loc = tokens.peek().unwrap().loc.clone();
             let var = parse_ident(tokens, vars)?;
-
-            let res = match tokens.peek().ok_or(Eof)?.value {
-                Semicolon | Rparen | BlockClose | Comma => {
-                    Ok(Ast::assign(var, Ast::num(0, loc.clone()), loc))
-                }
-                Equal => {
-                    tokens.next();
-                    let e = parse_expr(tokens, vars)?;
-                    Ok(Ast::assign(var, e, loc))
-                }
-                _ => bail!(NotExpression(tokens.peek().unwrap().clone())),
-            };
+            let tok = tokens.peek().ok_or(Eof)?.value.clone();
+            if matches!(tok, Semicolon | Rparen | BlockClose | Comma) {
+                tokens.next();
+                return Ok(Ast::assign(var, Ast::num(0, loc.clone()), loc));
+            } else if !matches!(tok, Equal) {
+                bail!(NotExpression(tokens.peek().unwrap().clone()))
+            }
+            tokens.next();
+            let e = parse_expr(tokens, vars)?;
             expect_token!(tokens, Semicolon, NotSemicolon);
-            res
+            Ok(Ast::assign(var, e, loc))
         }
         BlockOpen => {
             let tok = tokens.next().unwrap();
@@ -254,20 +227,28 @@ where
     let loc = equal_tok.loc.clone();
     let equality = parse_equality(tokens, vars)?;
     let tok = tokens.peek().ok_or(Eof)?;
-    match tok.value {
-        Semicolon | Rparen | BlockClose | Comma => Ok(Ast::stmt(equality, loc)),
-        Equal => {
-            if let AstKind::Variable(_) = equality.value {
+    if matches!(tok.value, Semicolon | Rparen | BlockClose | Comma) {
+        return Ok(Ast::stmt(equality, loc));
+    } else if matches!(tok.value, Equal) {
+        match equality.value {
+            AstKind::Variable(_)
+            | AstKind::UniOp {
+                op:
+                    UniOp {
+                        value: UniOpKind::Dereference,
+                        ..
+                    },
+                ..
+            } => {
                 tokens.next();
                 let rvalue = parse_assign(tokens, vars)?;
                 let loc = equality.loc.merge(&rvalue.loc);
-                Ok(Ast::assign(equality, rvalue, loc))
-            } else {
-                bail!(NotAddressExp(equal_tok.clone()))
+                return Ok(Ast::assign(equality, rvalue, loc));
             }
+            _ => bail!(NotAddressExp(equal_tok.clone())),
         }
-        _ => bail!(NotExpression(tok.clone())),
     }
+    Err(anyhow!(NotExpression(tok.clone())))
 }
 
 fn parse_equality<Tokens>(
@@ -369,17 +350,12 @@ where
 {
     match tokens.peek().map(|tok| tok.value.clone()) {
         Some(Plus) | Some(Minus) | Some(Asterisk) | Some(Ampersand) => {
-            let (op, e) = match tokens.next() {
-                Some(Token { value: Plus, loc }) => (UniOp::plus(loc), parse_atom(tokens, vars)?),
-                Some(Token { value: Minus, loc }) => (UniOp::minus(loc), parse_atom(tokens, vars)?),
-                Some(Token {
-                    value: Asterisk,
-                    loc,
-                }) => (UniOp::dereference(loc), parse_expr1(tokens, vars)?),
-                Some(Token {
-                    value: Ampersand,
-                    loc,
-                }) => (UniOp::reference(loc), parse_expr1(tokens, vars)?),
+            let tok = tokens.next().unwrap().clone();
+            let (op, e) = match tok.value {
+                Plus => (UniOp::plus(tok.loc), parse_atom(tokens, vars)?),
+                Minus => (UniOp::minus(tok.loc), parse_atom(tokens, vars)?),
+                Asterisk => (UniOp::dereference(tok.loc), parse_expr1(tokens, vars)?),
+                Ampersand => (UniOp::reference(tok.loc), parse_expr1(tokens, vars)?),
                 _ => unreachable!(),
             };
             let loc = e.loc.merge(&op.loc);
@@ -420,6 +396,28 @@ where
             Ok(e)
         }
         _ => bail!(NotExpression(tok)),
+    }
+}
+
+fn parse_type<Tokens>(tokens: &mut Peekable<Tokens>) -> Result<Types>
+where
+    Tokens: Iterator<Item = Token>,
+{
+    let typename = match tokens.peek().ok_or(Eof)?.value.clone() {
+        Ident(s) => s,
+        _ => bail!(UnexpectedToken(tokens.peek().unwrap().clone())),
+    };
+    let key = TYPES.binary_search_by_key(&(&typename[..]), |(s, _)| s);
+    if let Ok(n) = key {
+        tokens.next();
+        let mut res = TYPES[n].1.clone();
+        while tokens.peek().ok_or(Eof)?.value == Asterisk {
+            tokens.next();
+            res = Types::Ptr(Box::new(res));
+        }
+        Ok(res)
+    } else {
+        bail!(UnexpectedToken(tokens.peek().unwrap().clone()))
     }
 }
 
