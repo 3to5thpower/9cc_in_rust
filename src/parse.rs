@@ -185,8 +185,9 @@ where
         }
         BlockOpen => {
             let tok = tokens.next().unwrap();
+            let mut vars = vars.clone();
             let mut loc = tok.loc;
-            let v = parse_vectors!(tokens, vars, BlockClose, Semicolon, parse_stmt);
+            let v = parse_vectors!(tokens, &mut vars, BlockClose, Semicolon, parse_stmt);
             if v.len() != 0 {
                 loc = loc.merge(&v[v.len() - 1].loc);
             }
