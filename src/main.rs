@@ -6,6 +6,7 @@ mod ast;
 mod codegen;
 mod error;
 mod lex;
+mod optimize;
 mod parse;
 
 fn main() -> Result<()> {
@@ -24,6 +25,7 @@ fn main() -> Result<()> {
         anyhow!(e)
     })?;
     let res = codegen::codegen(&astv);
+    let res = optimize::optimize(&res);
     println!("{}", res);
     Ok(())
 }

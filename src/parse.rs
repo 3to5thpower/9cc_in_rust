@@ -335,6 +335,7 @@ where
                 Minus => (UniOp::minus(tok.loc), parse_atom(tokens, vars)?),
                 Asterisk => (UniOp::dereference(tok.loc), parse_expr1(tokens, vars)?),
                 Ampersand => (UniOp::reference(tok.loc), parse_expr1(tokens, vars)?),
+                Sizeof => return Ok(Ast::num(4, tok.loc)),
                 _ => unreachable!(),
             };
             let loc = e.loc.merge(&op.loc);

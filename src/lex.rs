@@ -46,6 +46,7 @@ pub enum TokenKind {
     BlockClose,
     Comma,
     Ampersand,
+    Sizeof,
 }
 
 pub type Token = Annot<TokenKind>;
@@ -112,6 +113,9 @@ impl Token {
     }
     fn ampersand(loc: Loc) -> Self {
         Self::new(TokenKind::Ampersand, loc)
+    }
+    fn sizeof(loc: Loc) -> Self {
+        Self::new(TokenKind::Sizeof, loc)
     }
 }
 
@@ -217,6 +221,9 @@ fn lex_ident(input: &[u8], pos: usize) -> Result<(Token, usize), LexError> {
     let s = from_utf8(&input[start..end]).unwrap();
     if s == "return" {
         return Ok((Token::make_return(Loc(start, end)), end));
+    }
+    if s == "sizeof" {
+        return Ok((Token::sizeof(Loc(start, end)), end));
     }
     Ok((Token::ident(s, Loc(start, end)), end))
 }

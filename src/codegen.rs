@@ -130,10 +130,8 @@ fn gen(out: &mut String, ast: &Ast) {
             out.push_str("  push rdi\n");
         }
         Stmt(ast) => gen(out, &ast),
-        Variable(_, _ty) => {
-            gen_addr(out, &ast);
-            out.push_str("  pop rax\n");
-            out.push_str("  mov rax, [rax]\n");
+        Variable(offset, _ty) => {
+            out.push_str(&format!("  mov rax, [rbp - {}]\n", offset));
             out.push_str("  push rax\n");
         }
         Num(n) => out.push_str(&format!("  push {}\n", n)),
@@ -184,22 +182,12 @@ fn gen(out: &mut String, ast: &Ast) {
                             out.push_str("  idiv rdi\n");
                         }
                         _ => {
-                            let rega = match l.value {
-                                Variable(_, ty) => match *ty {
-                                    Types::Int => "eax",
-                                    _ => "rax",
-                                },
-                                _ => "rax",
-                            };
-                            let mut regb = match r.value {
-                                Variable(_, ty) => match *ty {
-                                    Types::Int => "edi",
-                                    _ => "rdi",
-                                },
-                                _ => "rdi",
-                            };
-                            if rega == "eax" {
+                            let (mut rega, mut regb) = ("rax", "rdi");
+                            if matches!(r.value, Variable(_, ty) if *ty == Types::Int)
+                                || matches!(l.value, Variable(_, ty) if *ty == Types::Int)
+                            {
                                 regb = "edi";
+                                rega = "eax";
                             }
 
                             out.push_str(&format!("  cmp {}, {}\n", rega, regb));
