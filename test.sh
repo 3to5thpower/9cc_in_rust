@@ -50,7 +50,7 @@ assert 6 'int main(){int a=2;int b=a+2;int c=b+2;return c;}'
 assert 10 'int main(){int a=2;int b=a+2;int c=b+2;int d=c+2;int e=d+2;return e;}'
 assert 5 'int main(){int four = 4; return four + 1;}'
 assert 10 'int main(){if(1) int a = 13; return 10;}'
-assert 3 'int main(){if(0) int a = 2; return a + 3;}'
+#assert 3 'int main(){int a = 3;if(0) a = 2; return a + 3;}'
 assert 3 'int main(){if(1 > 3) int a = 4; else int b = 3;return b;}'
 assert 4 'int main(){if(1 < 3) int a = 4; else int b = 3;return a;}'
 assert 3 'int main(){int a = 0; while(a<3) a = a + 1; return a;}'
@@ -72,11 +72,11 @@ int main(){
   return ans;
 }'
 
-#assert_link 5 'main(){ return foo(2, 3);}' '
-#int foo(int x, int y){
-#  printf("%d, %d ok\n", x, y);
-#  return x+y;
-#}'
+assert_link 5 'int main(){ return foo(2, 3);}' '
+int foo(int x, int y){
+  printf("%d, %d ok\n", x, y);
+  return x+y;
+}'
 
 assert 50 '
 int func(){
@@ -167,5 +167,35 @@ int main() {
   return x;
 }
 '
+assert 8 '
+int main() {
+  int x = 3; int i;
+  for(i = 0;i<5;i=i+1) x = x + 1;
+  int y = x;
+  return x;
+}
+'
+
+assert_link 8 '
+int main(){
+  int *p;
+  alloc4(&p, 1, 2, 4, 8);
+  int *q;
+  q = p + 2;
+  *q;
+  q = p + 3;
+  return *q; 
+}' '
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+void alloc4(int **p, int a, int b, int c, int d) {
+    *p = malloc(4*sizeof(int));
+    (*p)[0] = a;
+    (*p)[1] = b;
+    (*p)[2] = c;
+    (*p)[3] = d;
+}'
 
 echo OK

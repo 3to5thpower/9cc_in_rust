@@ -1,4 +1,4 @@
-use crate::ast::{Ast, AstKind, BinOpKind, UniOpKind};
+use crate::ast::{Ast, AstKind, BinOpKind, Types, UniOpKind};
 use crate::lex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::SeqCst;
@@ -112,7 +112,7 @@ fn gen(out: &mut String, ast: &Ast) {
         }
         Assign { l, r } => {
             match (*l).value.clone() {
-                Variable(_) => gen_addr(out, &l),
+                Variable(_, _) => gen_addr(out, &l),
                 UniOp {
                     op:
                         lex::Annot {
@@ -130,58 +130,92 @@ fn gen(out: &mut String, ast: &Ast) {
             out.push_str("  push rdi\n");
         }
         Stmt(ast) => gen(out, &ast),
-        Variable(_) => {
+        Variable(_, _ty) => {
             gen_addr(out, &ast);
             out.push_str("  pop rax\n");
             out.push_str("  mov rax, [rax]\n");
             out.push_str("  push rax\n");
         }
         Num(n) => out.push_str(&format!("  push {}\n", n)),
-        BinOp { op, l, r } => {
-            gen(out, &l);
-            gen(out, &r);
-            out.push_str("  pop rdi\n");
-            out.push_str("  pop rax\n");
-            match op.value {
-                Add => out.push_str("  add rax, rdi\n"),
-                Sub => out.push_str("  sub rax, rdi\n"),
-                Mult => out.push_str("  imul rax, rdi\n"),
-                Div => {
-                    out.push_str("  cqo\n");
-                    out.push_str("  idiv rdi\n");
+        BinOp { op, mut l, mut r } => {
+            if matches!((*r).value.clone(), Variable(_, bty) if matches!(*bty, Types::Ptr(_))) {
+                std::mem::swap(&mut l, &mut r)
+            }
+            match (*l).value.clone() {
+                Variable(_, boxty) if matches!(*boxty, Types::Ptr(_)) => {
+                    if matches!(op.value, Add | Sub) {
+                        gen(out, &l);
+                        gen(out, &r);
+                        out.push_str("  pop rax\n");
+                        let t = match *boxty {
+                            Types::Ptr(t) => t,
+                            _ => unreachable!(),
+                        };
+                        out.push_str(&format!(
+                            "  mov rdi, {}\n",
+                            match *t {
+                                Types::Int => 4,
+                                _ => 8,
+                            }
+                        ));
+                        out.push_str("  imul rax, rdi\n");
+                        out.push_str("  push rax\n");
+                        out.push_str("  pop rdi\n");
+                        out.push_str("  pop rax\n");
+                        out.push_str(&format!(
+                            "  {} rax, rdi\n",
+                            if op.value == Add { "add" } else { "sub" }
+                        ));
+                        out.push_str("  push rax\n");
+                    }
                 }
-                Less => {
-                    out.push_str("  cmp rax, rdi\n");
-                    out.push_str("  setl al\n");
-                    out.push_str("  movzb rax, al\n");
-                }
-                LessEqual => {
-                    out.push_str("  cmp rax, rdi\n");
-                    out.push_str("  setle al\n");
-                    out.push_str("  movzb rax, al\n");
-                }
-                Equal => {
-                    out.push_str("  cmp rax, rdi\n");
-                    out.push_str("  sete al\n");
-                    out.push_str("  movzb rax, al\n");
-                }
-                NotEqual => {
-                    out.push_str("  cmp rax, rdi\n");
-                    out.push_str("  setne al\n");
-                    out.push_str("  movzb rax, al\n");
-                }
-                Greater => {
-                    out.push_str("  cmp rdi, rax\n");
-                    out.push_str("  setl al\n");
-                    out.push_str("  movzb rax, al\n");
-                }
-                GreaterEqual => {
-                    out.push_str("  cmp rdi, rax\n");
-                    out.push_str("  setle al\n");
-                    out.push_str("  movzb rax, al\n");
+                _ => {
+                    gen(out, &l);
+                    gen(out, &r);
+                    out.push_str("  pop rdi\n");
+                    out.push_str("  pop rax\n");
+                    match op.value {
+                        Add => out.push_str("  add rax, rdi\n"),
+                        Sub => out.push_str("  sub rax, rdi\n"),
+                        Mult => out.push_str("  imul rax, rdi\n"),
+                        Div => {
+                            out.push_str("  cqo\n");
+                            out.push_str("  idiv rdi\n");
+                        }
+                        Less => {
+                            out.push_str("  cmp rax, rdi\n");
+                            out.push_str("  setl al\n");
+                            out.push_str("  movzb rax, al\n");
+                        }
+                        LessEqual => {
+                            out.push_str("  cmp rax, rdi\n");
+                            out.push_str("  setle al\n");
+                            out.push_str("  movzb rax, al\n");
+                        }
+                        Equal => {
+                            out.push_str("  cmp rax, rdi\n");
+                            out.push_str("  sete al\n");
+                            out.push_str("  movzb rax, al\n");
+                        }
+                        NotEqual => {
+                            out.push_str("  cmp rax, rdi\n");
+                            out.push_str("  setne al\n");
+                            out.push_str("  movzb rax, al\n");
+                        }
+                        Greater => {
+                            out.push_str("  cmp rdi, rax\n");
+                            out.push_str("  setl al\n");
+                            out.push_str("  movzb rax, al\n");
+                        }
+                        GreaterEqual => {
+                            out.push_str("  cmp rdi, rax\n");
+                            out.push_str("  setle al\n");
+                            out.push_str("  movzb rax, al\n");
+                        }
+                    }
+                    out.push_str("  push rax\n");
                 }
             }
-            out.push_str("  push rax\n");
         }
         UniOp { op, e } => match op.value {
             Plus => gen(out, &e),
@@ -207,7 +241,7 @@ fn gen(out: &mut String, ast: &Ast) {
 }
 fn gen_addr(out: &mut String, ast: &Ast) {
     match ast.value {
-        AstKind::Variable(offset) => {
+        AstKind::Variable(offset, _) => {
             out.push_str("  mov rax, rbp\n");
             out.push_str(&format!("  sub rax, {}\n", offset));
             out.push_str("  push rax\n");
@@ -234,7 +268,7 @@ fn cnt_var(ast: &Ast) -> usize {
         Num(_) => 0,
         BinOp { op: _, l, r } => max(cnt_var(&l), cnt_var(&r)),
         UniOp { op: _, e } => cnt_var(&e),
-        Variable(offset) => offset,
+        Variable(offset, _) => offset,
         Stmt(ast) => cnt_var(&ast),
         Assign { l, r } => max(cnt_var(&l), cnt_var(&r)),
         Return(ast) => cnt_var(&ast),

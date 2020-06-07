@@ -14,7 +14,7 @@ fn main() -> Result<()> {
         bail!("引数の個数が正しくありません");
     }
 
-    let ast = parse::parse(&args[1]).map_err(|e| {
+    let astv = parse::parse(&args[1]).map_err(|e| {
         if let Some(err) = e.downcast_ref::<error::ParseError>() {
             err.show_diagnostic(&args[1]);
             eprintln!("{}", e.root_cause());
@@ -24,7 +24,11 @@ fn main() -> Result<()> {
         }
         anyhow!(e)
     })?;
-    let res = codegen::codegen(&ast);
+
+    /*for ast in astv.iter() {
+        println!("{:?}", ast);
+    }*/
+    let res = codegen::codegen(&astv);
     println!("{}", res);
     Ok(())
 }

@@ -2,7 +2,7 @@ use crate::lex::{Annot, Loc};
 
 pub static TYPES: [(&str, Types); 1] = [("int", Types::Int)];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Types {
     Int,
     Ptr(Box<Types>),
@@ -11,7 +11,7 @@ pub enum Types {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AstKind {
     Num(u64),
-    Variable(usize), // usizeはBPからのオフセット
+    Variable(usize, Box<Types>), // usizeはBPからのオフセット
     UniOp {
         op: UniOp,
         e: Box<Ast>,
@@ -58,8 +58,8 @@ impl Ast {
     pub fn num(n: u64, loc: Loc) -> Self {
         Self::new(AstKind::Num(n), loc)
     }
-    pub fn variable(offset: usize, loc: Loc) -> Self {
-        Self::new(AstKind::Variable(offset), loc)
+    pub fn variable(offset: usize, ty: Types, loc: Loc) -> Self {
+        Self::new(AstKind::Variable(offset, Box::new(ty)), loc)
     }
     pub fn binop(op: BinOp, l: Ast, r: Ast, loc: Loc) -> Self {
         Self::new(

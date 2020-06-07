@@ -2,5 +2,6 @@
 tmp*
 *~
 *.o
+*.s
 compile_flags.txt
 a.out
