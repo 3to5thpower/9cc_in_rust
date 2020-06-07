@@ -17,17 +17,12 @@ fn main() -> Result<()> {
     let astv = parse::parse(&args[1]).map_err(|e| {
         if let Some(err) = e.downcast_ref::<error::ParseError>() {
             err.show_diagnostic(&args[1]);
-            eprintln!("{}", e.root_cause());
         } else if let Some(err) = e.downcast_ref::<error::LexError>() {
             err.show_diagnostic(&args[1]);
-            eprintln!("{}", e.root_cause());
         }
+        eprintln!("{}", e.root_cause());
         anyhow!(e)
     })?;
-
-    /*for ast in astv.iter() {
-        println!("{:?}", ast);
-    }*/
     let res = codegen::codegen(&astv);
     println!("{}", res);
     Ok(())

@@ -146,18 +146,19 @@ fn gen(out: &mut String, ast: &Ast) {
                     if matches!(op.value, Add | Sub) {
                         gen(out, &l);
                         gen(out, &r);
-                        out.push_str("  pop rax\n");
                         let t = match *boxty {
                             Types::Ptr(t) => t,
                             _ => unreachable!(),
                         };
                         out.push_str(&format!(
-                            "  mov rdi, {}\n",
+                            "  push {}\n",
                             match *t {
                                 Types::Int => 4,
                                 _ => 8,
                             }
                         ));
+                        out.push_str("  pop rdi\n");
+                        out.push_str("  pop rax\n");
                         out.push_str("  imul rax, rdi\n");
                         out.push_str("  push rax\n");
                         out.push_str("  pop rdi\n");

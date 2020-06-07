@@ -1,9 +1,10 @@
-use crate::ast::{Ast, AstKind, BinOp, Types, UniOp, UniOpKind, TYPES};
+use crate::ast::{Ast, AstKind, BinOp, Types, UniOp, UniOpKind};
 use crate::error::ParseError::*;
 use crate::lex::{Token, TokenKind::*};
+use anyhow::{anyhow, bail, Result};
 use std::iter::Peekable;
 
-use anyhow::{anyhow, bail, Result};
+type VarInfo = (String, usize, Types);
 
 macro_rules! expect_token {
     ($tokens: expr, $token: pat, $err: ident) => {{
@@ -74,7 +75,7 @@ where
     let loc = tokens.peek().ok_or(Eof)?.loc.clone();
     let _ty = parse_type(tokens)?;
     let (funname, mut loc) = match tokens.next().ok_or(Eof)?.value.clone() {
-        Ident(name) => (name.to_owned(), loc),
+        Ident(name) => (name, loc),
         _ => bail!(UnexpectedToken(tokens.peek().unwrap().clone())),
     };
     let mut vars = vec![];
@@ -94,10 +95,7 @@ where
     Ok(Ast::dec_fun(funname, args, stmts, loc))
 }
 
-fn parse_stmt<Tokens>(
-    tokens: &mut Peekable<Tokens>,
-    vars: &mut Vec<(String, usize, Types)>,
-) -> Result<Ast>
+fn parse_stmt<Tokens>(tokens: &mut Peekable<Tokens>, vars: &mut Vec<VarInfo>) -> Result<Ast>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -109,7 +107,7 @@ where
             expect_token!(tokens, Semicolon, NotSemicolon);
             Ok(Ast::make_return(exp, loc))
         }
-        Ident(s) if s == "if".to_owned() => {
+        Ident(s) if s == "if" => {
             let tok = tokens.next().unwrap();
             expect_token!(tokens, Lparen, UnexpectedToken);
             let cond = parse_expr(tokens, vars)?;
@@ -131,7 +129,7 @@ where
             let loc = tok.loc.merge(&stmt.loc);
             Ok(Ast::make_if(cond, stmt, loc))
         }
-        Ident(s) if s == "while".to_owned() => {
+        Ident(s) if s == "while" => {
             let tok = tokens.next().unwrap();
             expect_token!(tokens, Lparen, UnexpectedToken);
             let cond = parse_expr(tokens, vars)?;
@@ -140,7 +138,7 @@ where
             let loc = tok.loc.merge(&stmt.loc);
             Ok(Ast::make_while(cond, stmt, loc))
         }
-        Ident(s) if s == "for".to_owned() => {
+        Ident(s) if s == "for" => {
             let tok = tokens.next().unwrap();
             let mut loc = tok.loc;
             expect_token!(tokens, Lparen, UnexpectedToken);
@@ -154,7 +152,7 @@ where
             loc = loc.merge(&stmt.loc);
             Ok(Ast::make_for(declare, cond, update, stmt, loc))
         }
-        Ident(s) if TYPES.binary_search_by_key(&(&s[..]), |(s, _)| s).is_ok() => {
+        Ident(s) if s == "int" => {
             let loc = tokens.peek().unwrap().loc.clone();
             let var = parse_ident(tokens, vars)?;
             let tok = tokens.peek().ok_or(Eof)?.value.clone();
@@ -187,10 +185,7 @@ where
     }
 }
 
-fn parse_expr<Tokens>(
-    tokens: &mut Peekable<Tokens>,
-    vars: &mut Vec<(String, usize, Types)>,
-) -> Result<Ast>
+fn parse_expr<Tokens>(tokens: &mut Peekable<Tokens>, vars: &mut Vec<VarInfo>) -> Result<Ast>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -199,8 +194,8 @@ where
 
 fn parse_left_binop<Tokens>(
     tokens: &mut Peekable<Tokens>,
-    vars: &mut Vec<(String, usize, Types)>,
-    subexpr_parser: fn(&mut Peekable<Tokens>, &mut Vec<(String, usize, Types)>) -> Result<Ast>,
+    vars: &mut Vec<VarInfo>,
+    subexpr_parser: fn(&mut Peekable<Tokens>, &mut Vec<VarInfo>) -> Result<Ast>,
     op_parser: fn(&mut Peekable<Tokens>) -> Result<BinOp>,
 ) -> Result<Ast>
 where
@@ -208,24 +203,17 @@ where
 {
     let mut e = subexpr_parser(tokens, vars)?;
     loop {
-        if let None = tokens.peek() {
-            break;
-        }
         let op = match op_parser(tokens) {
             Ok(op) => op,
-            Err(_) => break,
+            Err(_) => return Ok(e),
         };
         let r = subexpr_parser(tokens, vars)?;
         let loc = e.loc.merge(&r.loc);
         e = Ast::binop(op, e, r, loc)
     }
-    Ok(e)
 }
 
-fn parse_assign<Tokens>(
-    tokens: &mut Peekable<Tokens>,
-    vars: &mut Vec<(String, usize, Types)>,
-) -> Result<Ast>
+fn parse_assign<Tokens>(tokens: &mut Peekable<Tokens>, vars: &mut Vec<VarInfo>) -> Result<Ast>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -235,7 +223,7 @@ where
     let tok = tokens.peek().ok_or(Eof)?;
     if matches!(tok.value, Semicolon | Rparen | BlockClose | Comma) {
         return Ok(Ast::stmt(equality, loc));
-    } else if matches!(tok.value, Equal) {
+    } else if tok.value == Equal {
         match equality.value {
             AstKind::Variable(_, _)
             | AstKind::UniOp {
@@ -257,10 +245,7 @@ where
     Err(anyhow!(NotExpression(tok.clone())))
 }
 
-fn parse_equality<Tokens>(
-    tokens: &mut Peekable<Tokens>,
-    vars: &mut Vec<(String, usize, Types)>,
-) -> Result<Ast>
+fn parse_equality<Tokens>(tokens: &mut Peekable<Tokens>, vars: &mut Vec<VarInfo>) -> Result<Ast>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -279,10 +264,7 @@ where
     parse_left_binop(tokens, vars, parse_relational, parse_expr5_op)
 }
 
-fn parse_relational<Tokens>(
-    tokens: &mut Peekable<Tokens>,
-    vars: &mut Vec<(String, usize, Types)>,
-) -> Result<Ast>
+fn parse_relational<Tokens>(tokens: &mut Peekable<Tokens>, vars: &mut Vec<VarInfo>) -> Result<Ast>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -303,10 +285,7 @@ where
     parse_left_binop(tokens, vars, parse_expr3, parse_expr4_op)
 }
 
-fn parse_expr3<Tokens>(
-    tokens: &mut Peekable<Tokens>,
-    vars: &mut Vec<(String, usize, Types)>,
-) -> Result<Ast>
+fn parse_expr3<Tokens>(tokens: &mut Peekable<Tokens>, vars: &mut Vec<VarInfo>) -> Result<Ast>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -325,10 +304,7 @@ where
     parse_left_binop(tokens, vars, parse_expr2, parse_expr3_op)
 }
 
-fn parse_expr2<Tokens>(
-    tokens: &mut Peekable<Tokens>,
-    vars: &mut Vec<(String, usize, Types)>,
-) -> Result<Ast>
+fn parse_expr2<Tokens>(tokens: &mut Peekable<Tokens>, vars: &mut Vec<VarInfo>) -> Result<Ast>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -347,10 +323,7 @@ where
     parse_left_binop(tokens, vars, parse_expr1, parse_expr2_op)
 }
 
-fn parse_expr1<Tokens>(
-    tokens: &mut Peekable<Tokens>,
-    vars: &mut Vec<(String, usize, Types)>,
-) -> Result<Ast>
+fn parse_expr1<Tokens>(tokens: &mut Peekable<Tokens>, vars: &mut Vec<VarInfo>) -> Result<Ast>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -371,10 +344,7 @@ where
     }
 }
 
-fn parse_atom<Tokens>(
-    tokens: &mut Peekable<Tokens>,
-    vars: &mut Vec<(String, usize, Types)>,
-) -> Result<Ast>
+fn parse_atom<Tokens>(tokens: &mut Peekable<Tokens>, vars: &mut Vec<VarInfo>) -> Result<Ast>
 where
     Tokens: Iterator<Item = Token>,
 {
@@ -420,24 +390,19 @@ where
         Ident(s) => s,
         _ => bail!(UnexpectedToken(tokens.peek().unwrap().clone())),
     };
-    let key = TYPES.binary_search_by_key(&(&typename[..]), |(s, _)| s);
-    if let Ok(n) = key {
+    let mut res = match typename.as_str() {
+        "int" => Types::Int,
+        _ => bail!(NotType(tokens.peek().unwrap().clone())),
+    };
+    tokens.next();
+    while tokens.peek().ok_or(Eof)?.value == Asterisk {
         tokens.next();
-        let mut res = TYPES[n].1.clone();
-        while tokens.peek().ok_or(Eof)?.value == Asterisk {
-            tokens.next();
-            res = Types::Ptr(Box::new(res));
-        }
-        Ok(res)
-    } else {
-        bail!(UnexpectedToken(tokens.peek().unwrap().clone()))
+        res = Types::Ptr(Box::new(res));
     }
+    Ok(res)
 }
 
-fn parse_ident<Tokens>(
-    tokens: &mut Peekable<Tokens>,
-    vars: &mut Vec<(String, usize, Types)>,
-) -> Result<Ast>
+fn parse_ident<Tokens>(tokens: &mut Peekable<Tokens>, vars: &mut Vec<VarInfo>) -> Result<Ast>
 where
     Tokens: Iterator<Item = Token>,
 {

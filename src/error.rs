@@ -39,6 +39,8 @@ pub enum ParseError {
     RebundantExpression(Token),
     #[error("{}: cannot assign value in '{}'", .0.loc, .0.value)]
     NotAddressExp(Token),
+    #[error("{}: type '{}' is not defined type", .0.loc, .0.value)]
+    NotType(Token),
 }
 impl ParseError {
     pub fn show_diagnostic(&self, input: &str) {
@@ -50,6 +52,7 @@ impl ParseError {
             | P::NotSemicolon(Token { loc, .. })
             | P::NotOperator(Token { loc, .. })
             | P::NotDefinedExp(Token { loc, .. })
+            | P::NotType(Token { loc, .. })
             | P::UnClosedOpenParen(Token { loc, .. }) => loc.clone(),
             P::RebundantExpression(Token { loc, .. }) => Loc(loc.0, input.len() + 1),
             P::Eof => Loc(input.len(), input.len() + 1),
