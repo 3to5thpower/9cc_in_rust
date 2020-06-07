@@ -183,34 +183,38 @@ fn gen(out: &mut String, ast: &Ast) {
                             out.push_str("  cqo\n");
                             out.push_str("  idiv rdi\n");
                         }
-                        Less => {
-                            out.push_str("  cmp rax, rdi\n");
-                            out.push_str("  setl al\n");
-                            out.push_str("  movzb rax, al\n");
-                        }
-                        LessEqual => {
-                            out.push_str("  cmp rax, rdi\n");
-                            out.push_str("  setle al\n");
-                            out.push_str("  movzb rax, al\n");
-                        }
-                        Equal => {
-                            out.push_str("  cmp rax, rdi\n");
-                            out.push_str("  sete al\n");
-                            out.push_str("  movzb rax, al\n");
-                        }
-                        NotEqual => {
-                            out.push_str("  cmp rax, rdi\n");
-                            out.push_str("  setne al\n");
-                            out.push_str("  movzb rax, al\n");
-                        }
-                        Greater => {
-                            out.push_str("  cmp rdi, rax\n");
-                            out.push_str("  setl al\n");
-                            out.push_str("  movzb rax, al\n");
-                        }
-                        GreaterEqual => {
-                            out.push_str("  cmp rdi, rax\n");
-                            out.push_str("  setle al\n");
+                        _ => {
+                            let rega = match l.value {
+                                Variable(_, ty) => match *ty {
+                                    Types::Int => "eax",
+                                    _ => "rax",
+                                },
+                                _ => "rax",
+                            };
+                            let mut regb = match r.value {
+                                Variable(_, ty) => match *ty {
+                                    Types::Int => "edi",
+                                    _ => "rdi",
+                                },
+                                _ => "rdi",
+                            };
+                            if rega == "eax" {
+                                regb = "edi";
+                            }
+
+                            out.push_str(&format!("  cmp {}, {}\n", rega, regb));
+                            out.push_str(&format!(
+                                "  {} al\n",
+                                match op.value {
+                                    Less => "setl",
+                                    LessEqual => "setle",
+                                    Equal => "sete",
+                                    NotEqual => "setne",
+                                    GreaterEqual => "setge",
+                                    Greater => "setg",
+                                    _ => unreachable!(),
+                                }
+                            ));
                             out.push_str("  movzb rax, al\n");
                         }
                     }
