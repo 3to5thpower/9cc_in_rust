@@ -328,14 +328,32 @@ where
     Tokens: Iterator<Item = Token>,
 {
     match tokens.peek().map(|tok| tok.value.clone()) {
-        Some(Plus) | Some(Minus) | Some(Asterisk) | Some(Ampersand) => {
+        Some(Plus) | Some(Minus) | Some(Asterisk) | Some(Ampersand) | Some(Sizeof) => {
             let tok = tokens.next().unwrap().clone();
             let (op, e) = match tok.value {
                 Plus => (UniOp::plus(tok.loc), parse_atom(tokens, vars)?),
                 Minus => (UniOp::minus(tok.loc), parse_atom(tokens, vars)?),
                 Asterisk => (UniOp::dereference(tok.loc), parse_expr1(tokens, vars)?),
                 Ampersand => (UniOp::reference(tok.loc), parse_expr1(tokens, vars)?),
-                Sizeof => return Ok(Ast::num(4, tok.loc)),
+                Sizeof => {
+                    let mut open = false;
+                    if matches!(tokens.peek().ok_or(Eof)?.value, Lparen) {
+                        tokens.next();
+                        open = true;
+                    }
+                    let size = match parse_type(tokens)? {
+                        Types::Int => 4,
+                        Types::Ptr(_) => 8,
+                    };
+                    if open {
+                        if matches!(tokens.peek().ok_or(Eof)?.value, Rparen) {
+                            tokens.next();
+                        } else {
+                            bail!(UnClosedOpenParen(tokens.peek().unwrap().clone()));
+                        }
+                    }
+                    return Ok(Ast::num(size, tok.loc));
+                }
                 _ => unreachable!(),
             };
             let loc = e.loc.merge(&op.loc);

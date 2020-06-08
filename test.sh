@@ -198,4 +198,10 @@ void alloc4(int **p, int a, int b, int c, int d) {
     (*p)[3] = d;
 }'
 
+
+assert 4 'int main(){int x=sizeof(int);return x;}'
+assert 4 'int main(){int x=sizeof int;return x;}'
+assert 8 'int main(){int x=sizeof(int*);return x;}'
+
+
 echo OK
