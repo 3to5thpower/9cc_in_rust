@@ -74,7 +74,7 @@ where
 {
     let loc = tokens.peek().ok_or(Eof)?.loc.clone();
     let _ty = parse_type(tokens)?;
-    let (funname, mut loc) = match tokens.next().ok_or(Eof)?.value.clone() {
+    let (funname, mut loc) = match tokens.next().ok_or(Eof)?.value {
         Ident(name) => (name, loc),
         _ => bail!(UnexpectedToken(tokens.peek().unwrap().clone())),
     };
@@ -172,7 +172,7 @@ where
             let mut vars = vars.clone();
             let mut loc = tok.loc;
             let v = parse_vectors!(tokens, &mut vars, BlockClose, Semicolon, parse_stmt);
-            if v.len() != 0 {
+            if !v.is_empty() {
                 loc = loc.merge(&v[v.len() - 1].loc);
             }
             Ok(Ast::make_block(v, loc))
@@ -239,7 +239,7 @@ where
                 let loc = equality.loc.merge(&rvalue.loc);
                 return Ok(Ast::assign(equality, rvalue, loc));
             }
-            _ => bail!(NotAddressExp(equal_tok.clone())),
+            _ => bail!(NotAddressExp(equal_tok)),
         }
     }
     Err(anyhow!(NotExpression(tok.clone())))
@@ -329,18 +329,20 @@ where
 {
     match tokens.peek().map(|tok| tok.value.clone()) {
         Some(Plus) | Some(Minus) | Some(Asterisk) | Some(Ampersand) | Some(Sizeof) => {
-            let tok = tokens.next().unwrap().clone();
+            let tok = tokens.next().unwrap();
             let (op, e) = match tok.value {
                 Plus => (UniOp::plus(tok.loc), parse_atom(tokens, vars)?),
                 Minus => (UniOp::minus(tok.loc), parse_atom(tokens, vars)?),
                 Asterisk => (UniOp::dereference(tok.loc), parse_expr1(tokens, vars)?),
                 Ampersand => (UniOp::reference(tok.loc), parse_expr1(tokens, vars)?),
                 Sizeof => {
-                    let mut open = false;
-                    if matches!(tokens.peek().ok_or(Eof)?.value, Lparen) {
-                        tokens.next();
-                        open = true;
-                    }
+                    let open = match tokens.peek().ok_or(Eof)?.value {
+                        Lparen => {
+                            tokens.next();
+                            true
+                        },
+                        _ => false
+                    };
                     let size = match parse_type(tokens)? {
                         Types::Int => 4,
                         Types::Ptr(_) => 8,
@@ -367,7 +369,7 @@ fn parse_atom<Tokens>(tokens: &mut Peekable<Tokens>, vars: &mut Vec<VarInfo>) ->
 where
     Tokens: Iterator<Item = Token>,
 {
-    let tok = tokens.next().ok_or(Eof)?.clone();
+    let tok = tokens.next().ok_or(Eof)?;
     match tok.value {
         Num(n) => Ok(Ast::num(n, tok.loc)),
         Ident(s) => {
@@ -375,7 +377,7 @@ where
                 let mut loc = tok.loc.clone();
                 tokens.next();
                 let args = parse_vectors!(tokens, vars, Rparen, Comma, parse_expr);
-                if args.len() != 0 {
+                if !args.is_empty() {
                     loc = loc.merge(&args[args.len() - 1].loc);
                 }
                 Ok(Ast::make_function(s, args, loc))
@@ -384,7 +386,7 @@ where
                 let t = Token::new(Ident(s), tok.loc.clone());
                 match var {
                     Some(_) => Ok(Ast::variable(
-                        var.unwrap().1.clone(),
+                        var.unwrap().1,
                         var.unwrap().2.clone(),
                         tok.loc,
                     )),
@@ -442,5 +444,5 @@ where
         .max_by_key(|(_, offset, _)| offset)
         .map_or(size, |(_, offset, _)| offset + size);
     vars.push((name, offset, ty.clone()));
-    Ok(Ast::variable(offset, ty, loc.clone()))
+    Ok(Ast::variable(offset, ty, loc))
 }

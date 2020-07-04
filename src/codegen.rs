@@ -11,15 +11,15 @@ fn gen(out: &mut String, ast: &Ast) {
     use BinOpKind::*;
     use UniOpKind::*;
     match ast.value.clone() {
-        FunDeclare { name, args, body } => {
+        FunDeclare { name, args: _, body } => {
             out.push_str(&format!("{}:\n", name));
             out.push_str("  push rbp\n");
             out.push_str("  mov rbp, rsp\n");
             out.push_str(&format!("  sub rsp, {}\n", cnt_var(&ast) + 8));
-            for i in 0..args.len() {
+            for (i, reg) in REGS.iter().enumerate() {
                 out.push_str("  mov rax, rbp\n");
                 out.push_str(&format!("  sub rax, {}\n", 8 * (i + 1)));
-                out.push_str(&format!("  mov [rax], {}\n", REGS[i]));
+                out.push_str(&format!("  mov [rax], {}\n", reg));
             }
             for ast in body {
                 gen(out, &ast);
@@ -243,7 +243,7 @@ fn gen_addr(out: &mut String, ast: &Ast) {
     }
 }
 
-pub fn codegen(astes: &Vec<Ast>) -> String {
+pub fn codegen(astes: &[Ast]) -> String {
     let mut res = String::new();
     res.push_str(".intel_syntax noprefix\n");
     res.push_str(".global main\n");

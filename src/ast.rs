@@ -128,9 +128,9 @@ impl Ast {
     ) -> Self {
         Self::new(
             AstKind::For {
-                declare: declare.map(|ast| Box::new(ast)),
-                cond: cond.map(|ast| Box::new(ast)),
-                update: update.map(|ast| Box::new(ast)),
+                declare: declare.map(Box::new),
+                cond: cond.map(Box::new),
+                update: update.map(Box::new),
                 stmt: Box::new(stmt),
             },
             loc,
